@@ -53,6 +53,14 @@ def test_gzip_and_truncated_tails_are_tolerated(tmp_path):
     assert session_filename("node:3", 0.0) == "node-3-19700101-000000.jsonl"
 
 
+def test_log_path_without_suffix_is_a_directory(tmp_path):
+    a = SessionRecorder(tmp_path / "logs", "relay")
+    b = SessionRecorder(tmp_path / "logs", "node:2")
+    a.close()
+    b.close()
+    assert (tmp_path / "logs").is_dir() and a.path != b.path and a.path.parent == b.path.parent
+
+
 def test_load_merges_sources_with_offsets(tmp_path):
     for name, src, t in (("a.jsonl", "relay", 10.0), ("b.jsonl", "node:2", 5.0)):
         (tmp_path / name).write_text(json.dumps({"kind": "event", "t": t, "src": src, "event": "x"}) + "\n")

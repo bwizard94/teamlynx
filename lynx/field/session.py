@@ -26,7 +26,6 @@ import gzip
 import io
 import json
 import logging
-import os
 import socket
 import threading
 import time
@@ -52,7 +51,7 @@ class SessionRecorder:
                  meta: Optional[dict] = None, flush_s: float = 1.0, compress: Optional[bool] = None,
                  wall: Callable[[], float] = time.time, mono: Callable[[], float] = time.monotonic) -> None:
         p = Path(path)
-        if p.is_dir() or str(path).endswith(os.sep):
+        if p.is_dir() or not p.name.endswith((".jsonl", ".jsonl.gz")):
             p.mkdir(parents=True, exist_ok=True)
             p = p / session_filename(source, wall(), bool(compress))
         p.parent.mkdir(parents=True, exist_ok=True)
