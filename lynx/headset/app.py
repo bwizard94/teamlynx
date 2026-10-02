@@ -18,6 +18,7 @@ Per frame:
 
 Keys (display mode): q/Esc quit, e edge mode, p cycle PiP, 1-5 ping type
 (mark/contact/move/danger/rally), space ping, x or Backspace cancel my last ping, c screenshot,
+n arm/disarm the IR illuminator (with --ir-interlock),
 plus the pose-source keys (keyboard: a/d yaw, w/s pitch, [/] roll, i/k/j/l move, r level).
 """
 
@@ -29,7 +30,7 @@ import os
 import sys
 import time
 from dataclasses import dataclass
-from typing import List, Optional, Sequence
+from typing import TYPE_CHECKING, List, Optional, Sequence
 
 import cv2
 import numpy as np
@@ -45,6 +46,9 @@ from lynx.spatial import Pose, RayHit, raycast_from_pose
 from lynx.vision.edge import EdgeConfig, EdgeFilter
 from lynx.vision.iff import IffAssociator, IffResult
 from lynx.vision.types import CameraModel, IffStatus, OperatorPose, TeammateTrack
+
+if TYPE_CHECKING:
+    from lynx.hw.ir_interlock import IrInterlock
 
 log = logging.getLogger("lynx.headset")
 
@@ -74,6 +78,7 @@ class HeadsetConfig:
     edge_op: str = "sobel"
     backend: str = "auto"
     pip: str = "auto"
+    ir_imu: str = "ok"  # IR interlock IMU requirement: "ok" (LinkState.OK) or "usable" (OK or DEGRADED)
 
 
 class HeadsetClient:
@@ -85,8 +90,10 @@ class HeadsetClient:
         camera: CameraSource,
         pose_source: PoseSource,
         net: Optional[BackgroundClient] = None,
+        ir: Optional["IrInterlock"] = None,
     ) -> None:
         self.config = config
+        self.ir = ir
         self.camera_source = camera
         self.pose_source = pose_source
         self.client = (
@@ -149,6 +156,8 @@ class HeadsetClient:
         return self.net.connected
 
     def stop(self) -> None:
+        if self.ir is not None:
+            self.ir.close()
         self.net.stop()
         self.camera_source.close()
         self.pose_source.close()
@@ -189,6 +198,29 @@ class HeadsetClient:
         if mine:
             self.net.cancel_ping(mine[-1].ping.ping_id)
 
+    # ------------------------------------------------------------------ IR interlock
+    def _imu_health(self):
+        link = getattr(self.pose_source, "link", None)
+        health = getattr(link, "health", None)
+        return health() if callable(health) else None
+
+    def update_ir(self, pose: Pose):
+        """Feed the IR interlock (if any) with this frame's mode, attitude and IMU health."""
+        if self.ir is None:
+            return None
+        try:
+            _, pitch, roll = pose.euler
+            health = self._imu_health()
+            if health is None:
+                imu_ok, why = False, "no head tracker"
+            else:
+                imu_ok = health.ok if self.config.ir_imu == "ok" else health.usable
+                why = health.state.value
+        except Exception as exc:  # noqa: BLE001 - the interlock treats bad inputs as a trip
+            pitch = roll = None
+            imu_ok, why = False, f"error {exc!r}"
+        return self.ir.update(self.edge_mode, pitch, roll, imu_ok, imu_reason=why)
+
     # ------------------------------------------------------------------ frame
     def _detect(self, cf: CameraFrame):
         if self.detector_mode == "sim":
@@ -216,6 +248,7 @@ class HeadsetClient:
         now = time.monotonic() if now is None else now
         cfg = self.config
         sample = self.pose_source.read(now)
+        ir_status = self.update_ir(sample.pose)
         pose = adapters.operator_pose(sample.pose, cfg.node_id, cfg.callsign, cfg.team)
 
         if now >= self._next_tx:
@@ -250,12 +283,16 @@ class HeadsetClient:
         alerts = [] if connected else ["! RELAY LINK DOWN"]
         if tango:
             alerts.append(f"! {tango} TANGO IN VIEW")
+        if ir_status is not None and ir_status.state.value == "lockout":
+            alerts.append(f"! {ir_status.summary()}")
         telemetry = {
             "LINK": f"{'UP' if connected else 'DOWN'} {len(teammates)} NODES {len(world_pings)} PINGS",
             "PIPE": f"{(time.perf_counter() - t_cap) * 1000:5.1f}ms DET {(t_det - t_cap) * 1000:4.1f}ms",
             "FPS": f"{self.fps:4.1f} EDGE {self.edge.backend.upper()} DET {self.detector_mode.upper()}",
             "PING": f"SEL {self.selected_ping.name}" + (f"  LAST {self.last_ping_msg}" if self.last_ping_msg else ""),
         }
+        if ir_status is not None:
+            telemetry["IR"] = ir_status.summary()
         state = HudState(
             pose=pose,
             camera=cf.camera,
@@ -290,6 +327,8 @@ class HeadsetClient:
             self.pip_mode = PIP_MODES[(PIP_MODES.index(cur) + 1) % len(PIP_MODES)]
         elif key in PING_KEYS:
             self.selected_ping = PING_KEYS[key]
+        elif key == ord("n") and self.ir is not None:
+            self.ir.toggle_arm()
         elif key == ord("x") or key in KEY_BACKSPACE:
             self.cancel_last_ping()
         elif key == ord("c") and self.last_hud is not None:
@@ -403,6 +442,16 @@ def build_parser() -> argparse.ArgumentParser:
     cam.add_argument("--backend", choices=("auto", "cpu", "cuda"), default="auto")
     cam.add_argument("--pip", default="auto", choices=PIP_MODES)
 
+    ir = ap.add_argument_group("IR illuminator interlock (docs/field/hw-compute-power.md §5)")
+    ir.add_argument("--ir-interlock", action="store_true",
+                    help="drive IR_EN (Jetson header pin 32): on only when armed, in edge mode, pod deployed, IMU OK")
+    ir.add_argument("--ir-gpio", default="auto", choices=("auto", "jetson", "mock"),
+                    help="GPIO backend; auto = Jetson.GPIO if importable, else mock")
+    ir.add_argument("--ir-pin", type=int, default=32, help="BOARD pin number of IR_EN")
+    ir.add_argument("--ir-arm", action="store_true", help="arm at start (otherwise press n)")
+    ir.add_argument("--ir-imu", default="ok", choices=("ok", "usable"),
+                    help="IMU state required: ok, or usable (also accept DEGRADED, e.g. low mag calibration)")
+
     out = ap.add_argument_group("output")
     out.add_argument("--headless", action="store_true", help="no window")
     out.add_argument("--fps", type=float, default=30.0, help="frame-rate cap (0 = uncapped)")
@@ -437,7 +486,23 @@ def config_from_args(args: argparse.Namespace) -> HeadsetConfig:
         edge_op=args.edge_op,
         backend=args.backend,
         pip=args.pip,
+        ir_imu=args.ir_imu,
     )
+
+
+def make_ir_interlock(args: argparse.Namespace) -> Optional["IrInterlock"]:
+    if not args.ir_interlock:
+        return None
+    from lynx.hw.ir_interlock import IrInterlock, IrInterlockConfig, open_gpio
+
+    try:
+        gpio = open_gpio(args.ir_gpio)
+    except RuntimeError as exc:
+        raise SystemExit(f"IR interlock: {exc}")
+    ir = IrInterlock(gpio, IrInterlockConfig(pin=args.ir_pin)).start()
+    if args.ir_arm:
+        ir.arm()
+    return ir
 
 
 def main(argv: Optional[Sequence[str]] = None) -> int:
@@ -453,7 +518,13 @@ def main(argv: Optional[Sequence[str]] = None) -> int:
         raise SystemExit(str(exc))
     camera = open_camera_source(args.source, args.width, args.height, args.hfov, args.vfov,
                                 seed=args.seed, unknowns=not args.no_unknowns)
-    client = HeadsetClient(config_from_args(args), camera, pose_source)
+    ir = make_ir_interlock(args)
+    try:
+        client = HeadsetClient(config_from_args(args), camera, pose_source, ir=ir)
+    except BaseException:
+        if ir is not None:
+            ir.close()
+        raise
     return run(client, args)
 
 
