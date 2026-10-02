@@ -46,10 +46,29 @@ def test_operator_pose_roundtrips_through_spatial_pose(op):
     assert (back.pitch, back.roll) == pytest.approx((op.pitch, op.roll))
 
 
+def phase2_closed_form_R_cw(yaw, pitch, roll):
+    """The rotation Phase 2 derived independently (docs/vision-pipeline.md)."""
+    psi, theta, phi = (math.radians(a) for a in (yaw, pitch, roll))
+    sp, cp, st, ct = math.sin(psi), math.cos(psi), math.sin(theta), math.cos(theta)
+    sr, cr = math.sin(phi), math.cos(phi)
+    f = np.array([sp * ct, cp * ct, st])
+    r0 = np.array([cp, -sp, 0.0])
+    u0 = np.array([-sp * st, -cp * st, ct])
+    r = r0 * cr - u0 * sr
+    u = u0 * cr + r0 * sr
+    return np.stack([r, -u, f])
+
+
 @pytest.mark.parametrize("op", POSES)
 def test_rotation_matches_spatial_camera_pose(op):
     R = rotation_world_to_camera(op.yaw, op.pitch, op.roll)
     assert np.allclose(R, CameraPose.from_body_pose(op.spatial_pose).R_cw, atol=1e-12)
+
+
+def test_phase2_angle_convention_is_phase1_convention():
+    for yaw, pitch, roll in np.random.default_rng(3).uniform([-360, -89, -179], [360, 89, 179], (2000, 3)):
+        assert np.allclose(phase2_closed_form_R_cw(yaw, pitch, roll), rotation_world_to_camera(yaw, pitch, roll),
+                           atol=1e-12)
 
 
 @pytest.mark.parametrize("op", POSES)

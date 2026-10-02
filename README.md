@@ -4,13 +4,17 @@ TeamLynx is a squad tactical AR HUD for airsoft. Each headset shares its positio
 squad network, shows friendly IFF markers, and draws world pings that stay perspective-correct for
 every operator.
 
-This repository is at **Phase 1, zero hardware**. It contains:
+This repository covers **Phase 1 (zero hardware)** and **Phase 2 (software pipeline)**:
 
 * the wire schema;
 * an async WebSocket relay;
 * the spatial math (frames, rotations, pinhole projection, raycasting);
 * a multi-window desktop testbench that shows pings projecting correctly from every operator's
-  perspective.
+  perspective;
+* the vision pipeline: EagleEye edge mode, YOLO person/vehicle detection, IFF association with
+  squad telemetry ([docs/vision-pipeline.md](docs/vision-pipeline.md));
+* the HUD overlay and **`lynx-headset`**, the integrated headset client that runs all of the above
+  on live relay telemetry and pings ([docs/headset.md](docs/headset.md)).
 
 ## Quickstart
 
@@ -18,10 +22,25 @@ Requires Python 3.10+.
 
 ```bash
 python -m venv .venv && source .venv/bin/activate
-pip install -e ".[dev]"          # numpy, websockets, pygame, pytest
+pip install -e ".[vision,dev]"   # numpy, websockets, opencv, scipy, pygame, pytest
 pytest                           # full test suite
 lynx-selfcheck                   # headless end-to-end check (relay + 3 virtual operators)
 ```
+
+Optional extras: `[vision]` (OpenCV + SciPy; use `[vision-headless]` instead on servers/CI, never
+both), `[yolo]` (Ultralytics; install a torch wheel first), `[onnx]`, `[sim]` (pygame only). With
+only `[dev]` installed the vision, HUD and headset tests are skipped.
+
+### Run the integrated headset
+
+```bash
+lynx-relay                                                                               # terminal 1
+lynx-headset --node 1 --callsign ALPHA --team blue                                       # terminal 2
+lynx-headset --node 2 --callsign BRAVO --team blue --y 20 --heading 180 --pitch -10      # terminal 3
+```
+
+Both default to the synthetic low-light camera. Use `--source 0` for a webcam (YOLO11n) or
+`--source clip.mp4` for a video. See [docs/headset.md](docs/headset.md) for keys and options.
 
 ### Run the multi-window sim
 
@@ -85,14 +104,20 @@ lynx/
              server.py (relay), client.py (async client + thread wrapper)
   spatial/   rotations.py, frames.py, projection.py, raycast.py
   sim/       app.py (operator window), render.py, operator.py, launch.py, selfcheck.py
+  vision/    edge.py (EagleEye), detect.py (YOLO), iff.py, geometry.py (view onto lynx.spatial),
+             synthetic.py (CI scene), bench_edge.py
+  hud/       renderer.py, widgets.py, style.py, types.py, demo.py (offline demo)
+  headset/   app.py (lynx-headset), adapters.py (relay -> vision/HUD types),
+             pose.py (pluggable pose sources), sources.py (camera sources)
 docs/
   spatial-math.md   frame conventions and full derivations
   protocol.md       wire format and relay semantics
-tests/       pytest suite (math, schema, relay integration, sim)
+  vision-pipeline.md edge mode, detection, IFF, HUD
+  headset.md        integrated headset client, pose-source interface
+tests/       pytest suite (math, schema, relay, sim, vision, hud, headset end-to-end)
 ```
 
-Later phases will add `lynx/vision/` (edge filter, YOLO, IFF), `lynx/hud/` and `firmware/`
-(ESP32 + BNO085).
+Phase 3 adds `lynx/hw/` (serial IMU pose source) and `firmware/` (ESP32 + BNO085).
 
 ## Conventions
 

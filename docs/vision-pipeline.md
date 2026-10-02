@@ -19,8 +19,8 @@ camera ──► EdgeFilter (optional) ─────────────�
 
 | Path | Purpose |
 |---|---|
-| `lynx/vision/types.py` | Self-contained dataclasses: `OperatorPose`, `TeammateTrack`, `CameraModel`, `Detection`, `IffTrack`, `ExpectedTeammate`, `IffStatus` |
-| `lynx/vision/geometry.py` | Rotation from the ENU world frame to the camera frame, pinhole projection, pixel→angle, edge-arrow placement |
+| `lynx/vision/types.py` | Dataclasses (camera and pose are views onto `lynx.spatial`): `OperatorPose`, `TeammateTrack`, `CameraModel`, `Detection`, `IffTrack`, `ExpectedTeammate`, `IffStatus` |
+| `lynx/vision/geometry.py` | Vision view of `lynx.spatial`: projection with boresight azimuth/elevation, pixel→angle, edge-arrow placement |
 | `lynx/vision/edge.py` | EagleEye edge filter (CPU and `cv2.cuda`) |
 | `lynx/vision/bench_edge.py` | Edge-filter benchmark (ms/frame) |
 | `lynx/vision/detect.py` | Ultralytics YOLOv8n / YOLO11n wrapper, CLI, ONNX/TensorRT export |
@@ -29,26 +29,39 @@ camera ──► EdgeFilter (optional) ─────────────�
 | `lynx/hud/` | `HudRenderer`, `HudState`, widgets, palette, `demo.py` |
 | `tests/vision`, `tests/hud` | pytest suite (69 tests) |
 
-## Interface contract (wiring to `lynx.spatial` / `lynx.net`)
+## Interface with `lynx.spatial` / `lynx.net`
 
-The vision and HUD packages never import `lynx.spatial` or `lynx.net`, so
-both could be built at the same time. Once Phase 1 lands, each relay message
-maps field-for-field onto these types:
+The vision and HUD packages share Phase 1's camera model rather than carrying their own:
 
-| Phase 2 type | Fields | Source |
-|---|---|---|
-| `OperatorPose` | `x, y, z` (m), `yaw, pitch, roll` (deg), `node_id`, `callsign`, `team_color` | local IMU + datum position |
-| `TeammateTrack` | `node_id, callsign, x, y, z` (headset position, m), `team_color`, `timestamp` (s, same clock as `now`), `yaw` | relay telemetry |
-| `WorldPing` | `ping_id, x, y, z, label, owner, color` | relay ping events |
-| `ScreenPing` | `u, v` (px), `label`, `range_m`, `behind` | for when `lynx.spatial` has already projected the ping |
+- `CameraModel` is resolution + FOV; its `fx, fy, cx, cy` come from
+  `lynx.spatial.Intrinsics.from_fov` (`CameraModel.intrinsics`).
+- `OperatorPose` is the wire attitude (`yaw` = heading, `pitch`, `roll`) plus position;
+  `OperatorPose.spatial_pose` / `.camera_pose` are the `lynx.spatial` `Pose` / `CameraPose`
+  (boresighted, camera centre at the pose position), and `OperatorPose.from_pose()` goes back.
+- `lynx/vision/geometry.py` is a thin view: rotation, world→camera, pinhole projection, pixel rays,
+  compass bearing and off-screen indicator direction all delegate to `lynx.spatial`. It only adds
+  boresight azimuth/elevation and the unclamped in-front pixel that IFF needs.
+- The HUD places world pings with `lynx.spatial.Camera.project` (chevron on screen, clamped edge
+  arrow off screen or behind) and records the layout in `HudRenderer.last_pings`.
 
-Frame conventions. If `lynx.spatial` uses something different, convert at the adapter:
+Relay messages map onto the vision/HUD types in `lynx/headset/adapters.py`:
+
+| Vision / HUD type | Source |
+|---|---|
+| `OperatorPose` | local `lynx.spatial.Pose` from the pose source + node id, callsign, team |
+| `TeammateTrack` | `lynx.net.state.NodeState`: `Telemetry` fields, `timestamp = last_seen` (receiver `time.monotonic()`) |
+| `WorldPing` | `lynx.net.state.PingState`: label = `PingType` name, owner = owner's callsign, id = `(owner << 32) \| ping_id` |
+| `ScreenPing` | caller-projected pixel pings (unchanged) |
+
+The frame and angle conventions are defined once, in [spatial-math.md](spatial-math.md):
 
 - **World:** local ENU tangent plane at the staging-area datum: +X east, +Y north, +Z up, in metres.
-- **Attitude:** `yaw` is the compass heading (0 = north, clockwise positive), `pitch` is nose-up positive, `roll` is right-side-down positive. All in degrees.
+- **Attitude:** `yaw`/heading is the compass heading (0 = north, clockwise positive), `pitch` is nose-up positive, `roll` is right-side-down positive. All in degrees.
 - **Camera:** the OpenCV optical frame (+x right, +y down, +z forward), with the camera centre at the pose position.
 
-With heading ψ, pitch θ and roll φ, the body axes expressed in world coordinates are:
+With heading ψ, pitch θ and roll φ, `R_wb = Rz(90° − ψ) · Ry(−θ) · Rx(φ)` and
+`R_cw = R_CB · R_wbᵀ`; the rows of `R_cw` are the body right, down and forward axes in world
+coordinates:
 
 ```
 f  = ( sinψ cosθ,  cosψ cosθ,  sinθ)        forward
@@ -56,11 +69,12 @@ r0 = ( cosψ,      -sinψ,       0   )
 u0 = (-sinψ sinθ, -cosψ sinθ,  cosθ)
 r  = r0 cosφ − u0 sinφ                      right
 u  = u0 cosφ + r0 sinφ                      up
-R_wc = [ r ; −u ; f ]                       p_cam = R_wc (p_world − o)
+R_cw = [ r ; −u ; f ]                       p_cam = R_cw (p_world − o)
 u_px = c_x + f_x x_c / z_c,   v_px = c_y + f_y y_c / z_c,   f_x = (W/2) / tan(HFOV/2)
 ```
 
 `f_y` comes from `vfov_deg` when it is given; otherwise `f_y = f_x` (square pixels).
+`tests/headset/test_adapters.py` checks that the vision geometry and `lynx.spatial` agree to 1e-9.
 
 ## 1. EagleEye edge mode (`lynx/vision/edge.py`)
 
@@ -268,7 +282,7 @@ frame. All sizes scale with `frame_height / 720`.
 ## 5. Demo
 
 ```bash
-pip install -r requirements-vision.txt
+pip install -e ".[vision]"            # add [yolo] for YOLO; [vision-headless] on CI
 
 # Synthetic (CI, no camera): writes a PNG and an MP4
 python -m lynx.hud.demo --source synthetic --frames 300 --headless \
@@ -326,7 +340,6 @@ python -m pytest tests/vision tests/hud -q      # 69 tests, ~20 s on CPU
 - Radar contact bearings ignore roll. That is acceptable for |roll| ≲ 10°.
 - IFF currently uses headset position only. Teammate yaw, and per-node
   covariance from Phase 3 UWB/IMU, can replace the fixed σ values.
-- The static `--teammate` and `--pose` flags in the camera demo are
-  temporary. Replace them with the Phase 1 relay client feed by mapping
-  messages to `TeammateTrack` / `OperatorPose` / `WorldPing` as described in
-  the interface contract above.
+- `lynx.hud.demo` keeps static `--teammate` / `--pose` flags for offline
+  use. The networked client is `lynx-headset` ([headset.md](headset.md)),
+  which feeds IFF and the HUD from live relay telemetry and pings.
