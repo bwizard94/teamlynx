@@ -1,0 +1,77 @@
+"""Spatial math: frames, rotations, pinhole projection and raycasting.
+
+See docs/spatial-math.md for conventions and derivations.
+"""
+
+from .frames import BODY_FORWARD, BODY_LEFT, BODY_UP, R_BC, R_CB, CameraMount, CameraPose, Pose
+from .projection import (
+    DEFAULT_NEAR,
+    Camera,
+    Intrinsics,
+    Projection,
+    Visibility,
+    clamp_direction_to_rect,
+    horizontal_bearing_deg,
+    screen_angle_deg,
+)
+from .raycast import HitKind, RayHit, intersect_ground, raycast, raycast_from_pose
+from .rotations import (
+    euler_to_matrix,
+    euler_to_quat,
+    matrix_to_euler,
+    matrix_to_quat,
+    quat_angle_between,
+    quat_conjugate,
+    quat_from_axis_angle,
+    quat_multiply,
+    quat_normalize,
+    quat_rotate,
+    quat_to_euler,
+    quat_to_matrix,
+    rot_x,
+    rot_y,
+    rot_z,
+    wrap_deg_180,
+    wrap_deg_360,
+)
+
+__all__ = [
+    "BODY_FORWARD",
+    "BODY_LEFT",
+    "BODY_UP",
+    "DEFAULT_NEAR",
+    "R_BC",
+    "R_CB",
+    "Camera",
+    "CameraMount",
+    "CameraPose",
+    "HitKind",
+    "Intrinsics",
+    "Pose",
+    "Projection",
+    "RayHit",
+    "Visibility",
+    "clamp_direction_to_rect",
+    "euler_to_matrix",
+    "euler_to_quat",
+    "horizontal_bearing_deg",
+    "intersect_ground",
+    "matrix_to_euler",
+    "matrix_to_quat",
+    "quat_angle_between",
+    "quat_conjugate",
+    "quat_from_axis_angle",
+    "quat_multiply",
+    "quat_normalize",
+    "quat_rotate",
+    "quat_to_euler",
+    "quat_to_matrix",
+    "raycast",
+    "raycast_from_pose",
+    "rot_x",
+    "rot_y",
+    "rot_z",
+    "screen_angle_deg",
+    "wrap_deg_180",
+    "wrap_deg_360",
+]

@@ -1,0 +1,38 @@
+[build-system]
+requires = ["setuptools>=64", "wheel"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "teamlynx"
+version = "0.1.0"
+description = "TeamLynx: squad tactical AR HUD for airsoft - networking, spatial math and desktop testbench"
+readme = "README.md"
+requires-python = ">=3.10"
+license = { text = "MIT" }
+dependencies = [
+    "numpy>=1.23",
+    "websockets>=13.0",
+]
+
+[project.optional-dependencies]
+sim = ["pygame>=2.1"]
+dev = [
+    "pytest>=7.4",
+    "pytest-asyncio>=0.23",
+    "pygame>=2.1",
+]
+
+[project.scripts]
+lynx-relay = "lynx.net.server:main"
+lynx-sim = "lynx.sim.app:main"
+lynx-sim-launch = "lynx.sim.launch:main"
+lynx-selfcheck = "lynx.sim.selfcheck:main"
+
+[tool.setuptools.packages.find]
+include = ["lynx*"]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+asyncio_mode = "auto"
+asyncio_default_fixture_loop_scope = "function"
+addopts = "-ra"
