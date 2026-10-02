@@ -155,7 +155,7 @@ PoseSourceFactory = Callable[[str, Pose], PoseSource]
 """``factory(argument, initial_pose)``; ``argument`` is the text after ``scheme:`` in the spec."""
 
 _REGISTRY: Dict[str, PoseSourceFactory] = {}
-_PLUGIN_MODULES: Dict[str, str] = {"serial": "lynx.hw"}
+_PLUGIN_MODULES: Dict[str, str] = {"serial": "lynx.hw", "gnss": "lynx.field.pose_source"}
 
 
 def register_pose_source(scheme: str, factory: PoseSourceFactory) -> None:
