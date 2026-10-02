@@ -7,6 +7,10 @@
 Each window simulates one headset: keyboard drives the pose (stand-in for the IMU), telemetry is
 published to the relay at ``--rate`` Hz, SPACE raycasts a ping from the reticle, and the view
 renders every squad member and ping through the shared projection math.
+
+With ``--imu-port`` (Phase 3 bench rig, or ``mock://`` for the mock device) head attitude comes
+from the ESP32/BNO085 head tracker, the rail switch drives pings (single: ping, double: CONTACT
+ping, long: cancel last) and T tares the heading to ``--datum-bearing``. The keyboard still walks.
 """
 
 from __future__ import annotations
@@ -70,15 +74,54 @@ class SimApp:
         self.minimap_range = 50.0
         self.ping_ttl = args.ping_ttl
         self.last_ping_msg = ""
+        self.imu = None
+        if getattr(args, "imu_port", None):
+            from lynx.hw import ImuCalibration, ImuHeadSource, ImuLink
 
-    def drop_ping(self) -> None:
-        hit = raycast_from_pose(self.operator.pose, max_range=self.args.max_range, fallback_range=self.args.fallback_range)
+            cal = ImuCalibration.load(args.imu_cal) if args.imu_cal and os.path.exists(args.imu_cal) else ImuCalibration()
+            if args.imu_mount:
+                cal.mount = args.imu_mount
+            if args.declination is not None:
+                cal.declination_deg = args.declination
+            self.imu = ImuHeadSource(ImuLink.open(args.imu_port, cal, baudrate=args.imu_baud))
+
+    def drop_ping(self, pose=None, ping_type: Optional[PingType] = None) -> None:
+        ping_type = self.selected if ping_type is None else ping_type
+        hit = raycast_from_pose(pose or self.operator.pose, max_range=self.args.max_range,
+                                fallback_range=self.args.fallback_range)
         x, y, z = (float(c) for c in hit.point)
-        ping = self.net.send_ping(x, y, z, self.selected, self.ping_ttl)
+        ping = self.net.send_ping(x, y, z, ping_type, self.ping_ttl)
         self.last_ping_msg = (
-            f"pinged {self.selected.name} #{ping.ping_id if ping else '?'} at "
+            f"pinged {ping_type.name} #{ping.ping_id if ping else '?'} at "
             f"({x:.1f}, {y:.1f}, {z:.1f}) {hit.kind.value} {hit.distance:.1f} m"
         )
+        log.info(self.last_ping_msg)
+
+    def poll_imu(self) -> None:
+        """Head attitude from the tracker; rail gestures -> the same ping path as SPACE."""
+        from lynx.hw import RailAction
+
+        pose, commands = self.imu.poll()
+        op = self.operator
+        if pose is not None:
+            op.heading, op.pitch, op.roll = pose.heading, pose.pitch, pose.roll
+        for cmd in commands:
+            if cmd.action is RailAction.CANCEL_LAST:
+                self.cancel_last()
+            else:
+                aim = cmd.aim or pose
+                self.drop_ping(aim.to_pose(op.pose.position) if aim else None, cmd.ping_type(self.selected))
+
+    def tare_imu(self) -> None:
+        from lynx.hw import TareError
+
+        try:
+            off = self.imu.link.tare(self.args.datum_bearing)
+            self.last_ping_msg = f"IMU tared to {self.args.datum_bearing:.1f} deg (offset {off:+.1f})"
+            if self.args.imu_cal:
+                self.imu.link.converter.cal.save(self.args.imu_cal)
+        except TareError as exc:
+            self.last_ping_msg = f"tare rejected: {exc}"
         log.info(self.last_ping_msg)
 
     def cancel_last(self, all_pings: bool = False) -> None:
@@ -95,6 +138,8 @@ class SimApp:
         renderer = Renderer(self.args.width, self.args.height, self.args.hfov, self.args.vfov)
         clock = pygame.time.Clock()
         self.net.start()
+        if self.imu is not None:
+            self.imu.link.start()
         tx_period = 1.0 / self.args.rate
         next_tx = 0.0
         running = True
@@ -122,16 +167,21 @@ class SimApp:
                             self.show_help = not self.show_help
                         elif ev.key == pygame.K_r:
                             self.operator.level()
+                        elif ev.key == pygame.K_t and self.imu is not None:
+                            self.tare_imu()
                         elif ev.key in (pygame.K_PLUS, pygame.K_EQUALS, pygame.K_KP_PLUS):
                             self.minimap_range = max(10.0, self.minimap_range / 1.5)
                         elif ev.key in (pygame.K_MINUS, pygame.K_KP_MINUS):
                             self.minimap_range = min(400.0, self.minimap_range * 1.5)
                 self.operator.step(dt, read_controls(pygame.key.get_pressed()))
+                if self.imu is not None:
+                    self.poll_imu()
 
                 now = time.monotonic()
                 if now >= next_tx:
                     op = self.operator
-                    self.net.send_telemetry(op.x, op.y, op.z, op.heading, op.pitch, op.roll)
+                    flags = self.imu.telemetry_flags() if self.imu is not None else 0
+                    self.net.send_telemetry(op.x, op.y, op.z, op.heading, op.pitch, op.roll, flags)
                     next_tx = now + tx_period
 
                 nodes, pings = self.net.snapshot()
@@ -150,13 +200,16 @@ class SimApp:
                     connected=self.net.connected,
                     selected_ping=self.selected,
                     status_lines=[f"{fps:4.0f} fps  tx {self.client.tx_count} rx {self.client.rx_count}  {self.args.url}",
-                                  self.last_ping_msg],
+                                  self.last_ping_msg]
+                    + ([self.imu.link.health().summary()] if self.imu is not None else []),
                     show_help=self.show_help,
                     minimap_range_m=self.minimap_range,
                 )
                 renderer.render(screen, vm)
                 pygame.display.flip()
         finally:
+            if self.imu is not None:
+                self.imu.link.stop()
             self.net.stop()
             pygame.quit()
 
@@ -183,6 +236,13 @@ def build_parser() -> argparse.ArgumentParser:
     p.add_argument("--fallback-range", type=float, default=50.0)
     p.add_argument("--encoding", default="binary", choices=["binary", "json"])
     p.add_argument("--window-pos", default=None, help="X,Y screen position of the window")
+    p.add_argument("--imu-port", default=None,
+                   help="head tracker serial port (/dev/ttyUSB0, COM5) or mock:// ; head pose + rail switch")
+    p.add_argument("--imu-baud", type=int, default=460800)
+    p.add_argument("--imu-cal", default=None, help="IMU calibration JSON (python -m lynx.hw tare --cal ...)")
+    p.add_argument("--imu-mount", default=None, help="sensor mount spec/preset, e.g. top-flat, FLU, left-side")
+    p.add_argument("--declination", type=float, default=None, help="magnetic declination, deg east +")
+    p.add_argument("--datum-bearing", type=float, default=0.0, help="bearing faced when pressing T (tare)")
     p.add_argument("-v", "--verbose", action="store_true")
     return p
 
