@@ -150,7 +150,7 @@ class TareSolution:
 
 
 def _sighting_sigma_rad(rho: float, sigma_imu_deg: float, sigma_marker_m: float) -> float:
-    return math.sqrt(math.radians(sigma_imu_deg) ** 2 + (sigma_marker_m / max(rho, 0.1)) ** 2)
+    return max(1e-6, math.sqrt(math.radians(sigma_imu_deg) ** 2 + (sigma_marker_m / max(rho, 0.1)) ** 2))
 
 
 def _results(site: Site, e: float, n: float, eye: float, sightings: Sequence[Sighting],
@@ -205,7 +205,7 @@ def solve_known_position(site: Site, e: float, n: float, sightings: Sequence[Sig
 
 def solve_resection(site: Site, sightings: Sequence[Sighting], initial: Tuple[float, float] = (0.0, 0.0), *,
                     eye_height: Optional[float] = None, sigma_imu_deg: float = DEFAULT_SIGMA_IMU_DEG,
-                    max_position_std_m: float = 1.0, max_residual_deg: float = 2.0,
+                    max_position_std_m: float = 2.0, max_residual_deg: float = 2.0,
                     iterations: int = 25) -> TareSolution:
     """Position and heading offset from >= 3 marker sightings (three-point resection)."""
     if len({s.marker for s in sightings}) < 3:

@@ -67,7 +67,8 @@ def cmd_discover(args: argparse.Namespace) -> int:
         print(f"{a.url:28} {a.role:9} prio {a.priority:<3} squad {a.squad or '-':8} id {a.relay_id or '-':16} "
               f"clients {a.clients} ({a.source})")
     if not found:
-        print("no relay answered; candidates from DNS / gateway:", " ".join(resolve_relay_urls(beacon=False, mdns=False)))
+        fallback = resolve_relay_urls(beacon=False, mdns=False)
+        print("no relay answered; candidates from DNS / gateway:", " ".join(fallback))
         return 1
     return 0
 

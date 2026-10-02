@@ -253,7 +253,7 @@ def router_script(r: Roster) -> str:
         "",
         "uci commit",
         "# --- services ---------------------------------------------------------------------------",
-        "[ -x /etc/init.d/lynx-relay ] && /etc/init.d/lynx-relay enable || echo 'lynx-relay not installed (install-relay.sh)'",
+        "[ -x /etc/init.d/lynx-relay ] && /etc/init.d/lynx-relay enable || echo 'lynx-relay missing: install-relay.sh'",
         "[ -x /etc/init.d/umdns ] && /etc/init.d/umdns enable || true",
         "/etc/init.d/sysntpd restart || true",
         "/etc/init.d/dnsmasq restart",
