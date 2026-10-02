@@ -1,0 +1,18 @@
+{
+  "name": "Compound A staging",
+  "datum": {"lat": 51.501234, "lon": -1.234567, "h": 85.2},
+  "north_reference": "true",
+  "convergence_deg": 0.0,
+  "declination_deg": 0.9,
+  "eye_height_m": 1.7,
+  "stations": {
+    "S1": {"e": 0.0, "n": 0.0},
+    "S2": {"e": 3.0, "n": 0.0},
+    "S3": {"e": 6.0, "n": 0.0}
+  },
+  "markers": {
+    "FLAG-N": {"e": 0.0, "n": 120.0, "u": 2.0},
+    "MAST-E": {"e": 140.0, "n": 35.0, "u": 6.0},
+    "GATE-W": {"e": -110.0, "n": -20.0, "u": 1.5}
+  }
+}

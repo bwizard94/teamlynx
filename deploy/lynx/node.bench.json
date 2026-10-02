@@ -1,0 +1,18 @@
+{
+  "node": 2,
+  "callsign": "BRAVO",
+  "team": "blue",
+  "squad": "LYNX",
+  "relay_urls": ["ws://127.0.0.1:8765"],
+  "discovery": false,
+  "imu": "mock://",
+  "gnss": null,
+  "site": "deploy/lynx/site.example.json",
+  "cal_dir": "/tmp/lynx-bench/cal",
+  "log_dir": "/tmp/lynx-bench/logs",
+  "calibrate": "never",
+  "station": "S1",
+  "markers": ["FLAG-N"],
+  "camera": {"source": "synthetic", "hfov": 78.0, "width": 1280, "height": 720},
+  "telemetry_hz": 20.0
+}

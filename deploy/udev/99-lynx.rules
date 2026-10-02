@@ -1,0 +1,12 @@
+# TeamLynx serial devices: stable names and no ModemManager probing (it sends AT commands to new ttys).
+# Install: sudo cp deploy/udev/99-lynx.rules /etc/udev/rules.d/ && sudo udevadm control --reload && sudo udevadm trigger
+# If a board uses another USB bridge, add its idVendor/idProduct (lsusb), or pin one by ATTRS{serial}.
+
+# ESP32 head tracker -> /dev/lynx-imu  (CP210x on ESP32-DevKitC, CH340/CH9102 clones, ESP32-S3 native USB CDC)
+SUBSYSTEM=="tty", ATTRS{idVendor}=="10c4", ATTRS{idProduct}=="ea60", SYMLINK+="lynx-imu", GROUP="dialout", MODE="0660", ENV{ID_MM_DEVICE_IGNORE}="1"
+SUBSYSTEM=="tty", ATTRS{idVendor}=="1a86", ATTRS{idProduct}=="7523", SYMLINK+="lynx-imu", GROUP="dialout", MODE="0660", ENV{ID_MM_DEVICE_IGNORE}="1"
+SUBSYSTEM=="tty", ATTRS{idVendor}=="1a86", ATTRS{idProduct}=="55d4", SYMLINK+="lynx-imu", GROUP="dialout", MODE="0660", ENV{ID_MM_DEVICE_IGNORE}="1"
+SUBSYSTEM=="tty", ATTRS{idVendor}=="303a", ATTRS{idProduct}=="1001", SYMLINK+="lynx-imu", GROUP="dialout", MODE="0660", ENV{ID_MM_DEVICE_IGNORE}="1"
+
+# u-blox GNSS over USB CDC-ACM (M8 / M9 / M10 modules and boards) -> /dev/lynx-gnss
+SUBSYSTEM=="tty", ATTRS{idVendor}=="1546", SYMLINK+="lynx-gnss", GROUP="dialout", MODE="0660", ENV{ID_MM_DEVICE_IGNORE}="1"
