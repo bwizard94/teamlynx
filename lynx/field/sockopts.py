@@ -3,8 +3,8 @@
 DSCP -> 802.11 user priority. Linux and hostapd map the IP precedence (DSCP >> 3) onto the
 802.1d user priority unless a QoS map is configured, so EF (46) -> UP 5 -> AC_VI. AC_VI contends
 with AIFSN 2 and CWmin 7 instead of best effort's AIFSN 3 and CWmin 15, which cuts the mean
-channel-access delay per frame from ~94 us to ~66 us and puts squad telemetry ahead of any bulk
-traffic (log sync, PiP video) on the same radio.
+channel-access delay per frame (AIFS + mean backoff) from ~110 us to ~66 us and puts squad
+telemetry ahead of any bulk traffic (log sync, PiP video) on the same radio.
 """
 
 from __future__ import annotations
