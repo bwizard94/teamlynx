@@ -42,6 +42,10 @@ lynx-headset --node 2 --callsign BRAVO --team blue --y 20 --heading 180 --pitch 
 Both default to the synthetic low-light camera. Use `--source 0` for a webcam (YOLO11n) or
 `--source clip.mp4` for a video. See [docs/headset.md](docs/headset.md) for keys and options.
 
+The same two-headset layout (synthetic or two USB NoIR cameras) is also
+`lynx-poc` — a thin launcher for the cheap 2-person proof of concept, not the
+field kit. See [docs/poc/README.md](docs/poc/README.md).
+
 ### Run the multi-window sim
 
 You can start everything with one command:
@@ -114,6 +118,8 @@ docs/
   protocol.md       wire format and relay semantics
   vision-pipeline.md edge mode, detection, IFF, HUD
   headset.md        integrated headset client, pose-source interface
+  poc/              cheap 2-person demo launcher (not the field kit)
+  field/            Phase 4 helmet + squad-net (later product)
 tests/       pytest suite (math, schema, relay, sim, vision, hud, headset end-to-end)
 ```
 
