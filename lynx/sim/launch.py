@@ -39,7 +39,7 @@ def main(argv: Optional[list[str]] = None) -> None:
     p.add_argument("--no-relay", action="store_true")
     p.add_argument("--width", type=int, default=960)
     p.add_argument("--height", type=int, default=600)
-    p.add_argument("--tile", action="store_true", help="tile windows left to right")
+    p.add_argument("--tile", action="store_true", help="tile windows in a 2-column grid")
     args = p.parse_args(argv)
 
     procs: List[subprocess.Popen] = []
@@ -65,7 +65,8 @@ def main(argv: Optional[list[str]] = None) -> None:
                 "--height", str(args.height),
             ]
             if args.tile:
-                cmd += ["--window-pos", f"{i * (args.width + 10)},{30}"]
+                col, row = i % 2, i // 2
+                cmd += ["--window-pos", f"{col * (args.width + 10)},{30 + row * (args.height + 40)}"]
             procs.append(subprocess.Popen(cmd))
         windows = procs[0 if args.no_relay else 1:]
         while all(w.poll() is None for w in windows):

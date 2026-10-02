@@ -70,12 +70,11 @@ class RenderReport:
 
 
 HELP_TEXT = [
-    "W/S  forward/back      A/D  strafe       SHIFT sprint",
-    "Q/E or LEFT/RIGHT  turn   UP/DOWN  pitch   Z/C  roll",
-    "PGUP/PGDN  eye height   R  level pitch+roll",
-    "SPACE  drop ping (raycast from reticle)   1-5  ping type",
-    "BACKSPACE  cancel my last ping   DEL  cancel all mine",
-    "+/-  minimap zoom   H  toggle help   ESC  quit",
+    "W/S move  A/D strafe  SHIFT sprint  Q/E or LEFT/RIGHT turn",
+    "UP/DOWN pitch  Z/C roll  PGUP/PGDN eye height  R level",
+    "SPACE ping from reticle  1-5 ping type",
+    "BACKSPACE cancel last ping  DEL cancel all mine",
+    "+/- minimap zoom  H hide help  ESC quit",
 ]
 
 
@@ -98,6 +97,7 @@ class Renderer:
         self.font_small = pygame.font.Font(None, 16)
         self.font_big = pygame.font.Font(None, 26)
         self.screen_rect = pygame.Rect(0, 0, width, height)
+        self._edge_labels: List[pygame.Rect] = []
 
     # -- helpers ----------------------------------------------------------------
     def _text(self, surf: pygame.Surface, text: str, pos: Tuple[float, float], color: Color,
@@ -140,6 +140,7 @@ class Renderer:
             items.append((proj.distance, "ping", (key, ps, proj)))
 
         items.sort(key=lambda it: -it[0])  # painter's algorithm: far to near
+        self._edge_labels: List[pygame.Rect] = []
         edge_items = []
         for _, kind, payload in items:
             proj = payload[2]  # type: ignore[index]
@@ -252,9 +253,18 @@ class Renderer:
             pygame.draw.polygon(surf, col, tri)
         tag = label + (" (behind)" if proj.visibility is Visibility.BEHIND else "")
         lp = c - d * 22
-        img_w = self.font_small.size(tag)[0]
+        img_w, img_h = self.font_small.size(tag)
         lx = min(max(lp[0], img_w / 2 + 2), self.width - img_w / 2 - 2)
         ly = min(max(lp[1], 10), self.height - 10)
+        # Declutter: slide the label away from the screen centre line until it is free.
+        step = img_h + 2 if ly >= self.intrinsics.cy else -(img_h + 2)
+        rect = pygame.Rect(0, 0, img_w, img_h)
+        for _ in range(8):
+            rect.center = (int(lx), int(ly))
+            if rect.collidelist(self._edge_labels) < 0:
+                break
+            ly = min(max(ly + step, 10), self.height - 10)
+        self._edge_labels.append(rect)
         self._text(surf, tag, (lx, ly), col, font=self.font_small, anchor="center")
 
     # -- HUD --------------------------------------------------------------------
@@ -378,10 +388,11 @@ class Renderer:
             self._text(surf, text, (10, y0 + 18 * i), col)
 
     def _draw_help(self, surf: pygame.Surface) -> None:
-        w = 520
-        h = 24 + 20 * len(HELP_TEXT)
+        w = 400
+        h = 12 + 16 * len(HELP_TEXT)
+        x0, y0 = self.width - w - 10, self.height - h - 10
         panel = pygame.Surface((w, h), pygame.SRCALPHA)
-        panel.fill((0, 0, 0, 200))
-        surf.blit(panel, ((self.width - w) // 2, self.height // 2 + 40))
+        panel.fill((0, 0, 0, 170))
+        surf.blit(panel, (x0, y0))
         for i, line in enumerate(HELP_TEXT):
-            self._text(surf, line, ((self.width - w) // 2 + 12, self.height // 2 + 52 + 20 * i), HUD, font=self.font_small)
+            self._text(surf, line, (x0 + 8, y0 + 6 + 16 * i), HUD_DIM, font=self.font_small)

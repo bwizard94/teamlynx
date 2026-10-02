@@ -88,7 +88,8 @@ class SimApp:
             self.net.cancel_ping(ps.ping.ping_id)
 
     def run(self) -> None:
-        pygame.init()
+        pygame.display.init()
+        pygame.font.init()
         screen = pygame.display.set_mode((self.args.width, self.args.height))
         pygame.display.set_caption(f"TeamLynx sim - {self.args.callsign} [{self.args.node}]")
         renderer = Renderer(self.args.width, self.args.height, self.args.hfov, self.args.vfov)
