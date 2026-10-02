@@ -132,7 +132,8 @@ class LoadReport:
             f"frames out {self.frames_out_per_s:.0f}/s",
             f"  generator lag p99 {self.generator_lag_p99_ms:.1f} ms"
             + (f"  relay CPU {self.relay_cpu_pct:.1f} %" if self.relay_cpu_pct is not None else "")
-            + (f"  host TCP segs {self.host_tcp_segments_per_s:.0f}/s" if self.host_tcp_segments_per_s is not None else ""),
+            + (f"  host TCP segs {self.host_tcp_segments_per_s:.0f}/s"
+               if self.host_tcp_segments_per_s is not None else ""),
         ]
         if self.errors:
             lines.append(f"  errors: {len(self.errors)} (first: {self.errors[0]})")

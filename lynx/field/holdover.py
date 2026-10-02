@@ -157,4 +157,5 @@ class FriendlyHoldover:
             alerts[:] = [a for a in alerts if a != "! RELAY LINK DOWN"]
             alerts.insert(0, f"! LINK DOWN {down:.0f}s - {len(self.held)} FRIENDLIES HELD")
         if self.held:
-            telemetry["HOLD"] = f"{len(self.held)} STALE  OLDEST {self.oldest_age_s:.0f}s  (DR <= {self.config.dr_horizon_s:.0f}s)"
+            telemetry["HOLD"] = (f"{len(self.held)} STALE  OLDEST {self.oldest_age_s:.0f}s  "
+                                 f"(DR <= {self.config.dr_horizon_s:.0f}s)")

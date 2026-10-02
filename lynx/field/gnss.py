@@ -24,7 +24,18 @@ import time
 from dataclasses import dataclass
 from typing import Callable, List, Optional, Protocol, Sequence, Tuple
 
-from .geodesy import Gga, Gst, LocalFrame, NmeaError, Rmc, format_gga, format_gst, format_rmc, parse_nmea, ublox_setup_frames
+from .geodesy import (
+    Gga,
+    Gst,
+    LocalFrame,
+    NmeaError,
+    Rmc,
+    format_gga,
+    format_gst,
+    format_rmc,
+    parse_nmea,
+    ublox_setup_frames,
+)
 
 log = logging.getLogger("lynx.gnss")
 
@@ -65,8 +76,19 @@ class GnssFix:
         return frame.to_enu(self.lat, self.lon, self.h)
 
 
+def _same_epoch(msg, utc_s: Optional[float], tolerance_s: float) -> bool:
+    if msg is None or msg.utc_s is None or utc_s is None:
+        return False
+    d = (utc_s - msg.utc_s) % 86400.0
+    return d <= tolerance_s + 1e-6
+
+
 class GnssReader:
-    """Assembles :class:`GnssFix` from GGA (+ RMC, GST) sentences; optional reader thread."""
+    """Assembles :class:`GnssFix` from GGA (+ RMC, GST) sentences; optional reader thread.
+
+    u-blox emits RMC before GGA and GST after it within an epoch, so a GGA completes a fix with the
+    same epoch's RMC and the GST (accuracy) of the same or previous epoch (``epoch_tolerance_s``).
+    """
 
     def __init__(self, transport: Optional[LineTransport] = None, uere_m: float = DEFAULT_UERE_M,
                  clock: Callable[[], float] = time.monotonic, stale_s: float = 2.0) -> None:
@@ -74,6 +96,7 @@ class GnssReader:
         self.uere_m = uere_m
         self.clock = clock
         self.stale_s = stale_s
+        self.epoch_tolerance_s = 1.0
         self._lock = threading.Lock()
         self._fix: Optional[GnssFix] = None
         self._rmc: Optional[Rmc] = None
@@ -164,14 +187,14 @@ class GnssReader:
                 self._fix = None
             return None
         hdop = g.hdop if g.hdop is not None else 99.0
-        gst = self._gst if self._gst is not None and self._gst.utc_s == g.utc_s else None
+        gst = self._gst if _same_epoch(self._gst, g.utc_s, self.epoch_tolerance_s) else None
         if gst is not None and gst.std_lat_m is not None and gst.std_lon_m is not None:
             std_n, std_e = gst.std_lat_m, gst.std_lon_m
             std_u = gst.std_alt_m if gst.std_alt_m is not None else 2.0 * std_n
         else:
             std_e = std_n = hdop * self.uere_m / math.sqrt(2.0)
             std_u = 2.0 * std_n
-        rmc = self._rmc if self._rmc is not None and self._rmc.utc_s == g.utc_s and self._rmc.valid else None
+        rmc = self._rmc if _same_epoch(self._rmc, g.utc_s, self.epoch_tolerance_s) and self._rmc.valid else None
         fix = GnssFix(now, float(g.lat), float(g.lon), float(g.h_ellipsoid or 0.0), g.quality, g.num_sats, hdop,
                       std_e, std_n, std_u, rmc.speed_mps if rmc else None, rmc.course_deg if rmc else None, g.utc_s)
         with self._lock:
@@ -207,7 +230,8 @@ class MockGnssReceiver:
     in real time unless ``realtime=False``.
     """
 
-    def __init__(self, frame: Optional[LocalFrame] = None, track: Optional[Callable[[float], Tuple[float, float]]] = None,
+    def __init__(self, frame: Optional[LocalFrame] = None,
+                 track: Optional[Callable[[float], Tuple[float, float]]] = None,
                  rate_hz: float = 5.0, noise_m: float = 0.0, seed: int = 0, quality: int = 1, hdop: float = 0.8,
                  std_m: float = 1.2, clock: Callable[[], float] = time.monotonic, realtime: bool = True,
                  timeout: float = 0.2) -> None:
@@ -241,8 +265,8 @@ class MockGnssReceiver:
             n += self._rng.gauss(0.0, self.noise_m)
         lat, lon, h = self.frame.to_geodetic(e, n, 0.0)
         utc = 43200.0 + round(t * self.rate_hz) / self.rate_hz
-        return [format_gga(utc, lat, lon, h, self.quality, 12, self.hdop),
-                format_rmc(utc, lat, lon, speed, course),
+        return [format_rmc(utc, lat, lon, speed, course),
+                format_gga(utc, lat, lon, h, self.quality, 12, self.hdop),
                 format_gst(utc, self.std_m, self.std_m, 2 * self.std_m)]
 
     def readline(self) -> bytes:
@@ -302,7 +326,8 @@ def average_fixes(fixes: Sequence[GnssFix], frame: LocalFrame, min_quality: int 
     me = statistics.median(p[0] for p in pts)
     mn = statistics.median(p[1] for p in pts)
     sigma = max(0.05, statistics.median(max(f.std_e, f.std_n) for f in good))
-    kept = [(p, f) for p, f in zip(pts, good) if math.hypot(p[0] - me, p[1] - mn) <= outlier_sigma * sigma * math.sqrt(2)]
+    gate = outlier_sigma * sigma * math.sqrt(2.0)
+    kept = [(p, f) for p, f in zip(pts, good) if math.hypot(p[0] - me, p[1] - mn) <= gate]
     if not kept:
         kept = list(zip(pts, good))
     es = [p[0] for p, _ in kept]
