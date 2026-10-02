@@ -29,7 +29,7 @@ import os
 import sys
 import time
 from dataclasses import dataclass
-from typing import List, Optional, Sequence
+from typing import Dict, List, Optional, Protocol, Sequence
 
 import cv2
 import numpy as np
@@ -76,6 +76,19 @@ class HeadsetConfig:
     pip: str = "auto"
 
 
+class HeadsetHook(Protocol):
+    """Per-frame extension point (``lynx.field``: link-loss holdover, drift alerts, session log).
+
+    ``teammates`` may replace the relay-derived teammate list (e.g. hold stale friendlies);
+    ``annotate`` may edit the alert lines and telemetry readout before the HUD is drawn.
+    """
+
+    def teammates(self, teammates: List[TeammateTrack], nodes, now: float, connected: bool) -> List[TeammateTrack]: ...
+
+    def annotate(self, client: "HeadsetClient", pose: OperatorPose, now: float, alerts: List[str],
+                 telemetry: Dict[str, str]) -> None: ...
+
+
 class HeadsetClient:
     """One headset. ``step()`` runs one frame and returns the composited HUD image."""
 
@@ -85,10 +98,12 @@ class HeadsetClient:
         camera: CameraSource,
         pose_source: PoseSource,
         net: Optional[BackgroundClient] = None,
+        hooks: Sequence[HeadsetHook] = (),
     ) -> None:
         self.config = config
         self.camera_source = camera
         self.pose_source = pose_source
+        self.hooks: List[HeadsetHook] = list(hooks)
         self.client = (
             net.client
             if net is not None
@@ -230,6 +245,8 @@ class HeadsetClient:
 
         nodes, pings = self.net.snapshot()
         teammates = adapters.teammates_from_nodes(nodes, cfg.node_id)
+        for hook in self.hooks:
+            teammates = hook.teammates(teammates, nodes, now, self.net.connected)
         world_pings = adapters.world_pings_from_state(pings, nodes, cfg.node_id, cfg.callsign)
 
         cf = self.camera_source.read(pose, teammates)
@@ -256,6 +273,8 @@ class HeadsetClient:
             "FPS": f"{self.fps:4.1f} EDGE {self.edge.backend.upper()} DET {self.detector_mode.upper()}",
             "PING": f"SEL {self.selected_ping.name}" + (f"  LAST {self.last_ping_msg}" if self.last_ping_msg else ""),
         }
+        for hook in self.hooks:
+            hook.annotate(self, pose, now, alerts, telemetry)
         state = HudState(
             pose=pose,
             camera=cf.camera,
