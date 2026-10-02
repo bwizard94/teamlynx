@@ -269,15 +269,24 @@ def _text(img, txt: str, org, color=TEXT, scale: float = 0.45, thick: int = 1) -
     cv2.putText(img, txt, (int(org[0]), int(org[1])), cv2.FONT_HERSHEY_SIMPLEX, scale, color, thick, cv2.LINE_AA)
 
 
-def _dashed(img, a, b, color, dash: int = 6) -> None:
+def _dashed_poly(img, pts, color, dash: float = 7.0) -> None:
+    """Dashes along a polyline by arc length, so runs of tiny segments still read as dashed."""
     import cv2
 
-    d = math.hypot(b[0] - a[0], b[1] - a[1])
-    n = max(1, int(d // dash))
-    for i in range(0, n, 2):
-        p = (int(a[0] + (b[0] - a[0]) * i / n), int(a[1] + (b[1] - a[1]) * i / n))
-        q = (int(a[0] + (b[0] - a[0]) * min(i + 1, n) / n), int(a[1] + (b[1] - a[1]) * min(i + 1, n) / n))
-        cv2.line(img, p, q, color, 1, cv2.LINE_AA)
+    run, on = 0.0, True
+    for a, b in zip(pts, pts[1:]):
+        seg = math.hypot(b[0] - a[0], b[1] - a[1])
+        pos = 0.0
+        while pos < seg:
+            step = min(dash - run, seg - pos)
+            if on:
+                p = (int(a[0] + (b[0] - a[0]) * pos / seg), int(a[1] + (b[1] - a[1]) * pos / seg))
+                q = (int(a[0] + (b[0] - a[0]) * (pos + step) / seg), int(a[1] + (b[1] - a[1]) * (pos + step) / seg))
+                cv2.line(img, p, q, color, 2, cv2.LINE_AA)
+            pos += step
+            run += step
+            if run >= dash - 1e-9:
+                run, on = 0.0, not on
 
 
 def draw_map_base(img, view: MapView, site=None) -> None:
@@ -368,11 +377,19 @@ def render_overview(s: Session, site=None, size: Tuple[int, int] = (1600, 1200),
             continue
         col = node_color(s, nid)
         pts = [view.px(p.x, p.y) for p in tr.points]
+        dashed_run: List[Tuple[int, int]] = []
         for (a, b), (pa, pb) in zip(zip(tr.points, tr.points[1:]), zip(pts, pts[1:])):
-            if b.t - a.t > gap_s:
-                _dashed(mapimg, pa, pb, col)
-            else:
-                cv2.line(mapimg, pa, pb, col, 2, cv2.LINE_AA)
+            if b.t - a.t > gap_s or not (a.link and b.link):
+                # no telemetry, or only the headset's own log (link down)
+                dashed_run = dashed_run or [pa]
+                dashed_run.append(pb)
+                continue
+            if dashed_run:
+                _dashed_poly(mapimg, dashed_run, col)
+                dashed_run = []
+            cv2.line(mapimg, pa, pb, col, 2, cv2.LINE_AA)
+        if dashed_run:
+            _dashed_poly(mapimg, dashed_run, col)
         cv2.circle(mapimg, pts[0], 5, col, 1, cv2.LINE_AA)
         end = tr.points[-1]
         cv2.circle(mapimg, pts[-1], 6, col, -1, cv2.LINE_AA)
@@ -384,6 +401,9 @@ def render_overview(s: Session, site=None, size: Tuple[int, int] = (1600, 1200),
         owner = callsign.get(pe.owner, f"N{pe.owner}")
         draw_ping(mapimg, view, pe, f"{pe.ping_type.upper()} {owner} {_clock(pe.t_start)}")
     head = title or f"TeamLynx AAR  {_clock(s.t0)}-{_clock(s.t1)} UTC  {s.duration_s / 60:.1f} min"
+    panel_h = 60 + 18 * len(s.tracks)
+    roi = mapimg[0:panel_h, 0:460]
+    roi[:] = (0.15 * roi + 0.85 * np.array(BG)).astype(np.uint8)
     _text(mapimg, head, (14, 26), (235, 255, 235), 0.6, 1)
     y = 48
     for nid in sorted(s.tracks):
@@ -391,7 +411,8 @@ def render_overview(s: Session, site=None, size: Tuple[int, int] = (1600, 1200),
         _text(mapimg, f"N{nid:02d} {callsign[nid]:8} {tr.team:5} {tr.distance_m():5.0f} m", (14, y),
               node_color(s, nid), 0.42)
         y += 18
-    _text(mapimg, f"pings {len(s.pings)}", (14, y), PING_BGR["mark"], 0.42)
+    _text(mapimg, f"pings {len(s.pings)}   dashed: no telemetry / headset log only (link down)", (14, y),
+          PING_BGR["mark"], 0.42)
     draw_timeline(img[map_h:], s)
     return img
 
