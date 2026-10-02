@@ -1,0 +1,7 @@
+{
+  "name": "LynxCore",
+  "version": "1.0.0",
+  "description": "TeamLynx head-tracker protocol (COBS + CRC16 framing) and rail-switch gesture logic. No Arduino dependency.",
+  "frameworks": "*",
+  "platforms": "*"
+}
