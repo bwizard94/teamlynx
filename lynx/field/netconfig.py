@@ -157,10 +157,15 @@ def router_script(r: Roster) -> str:
         "# Run on the router (OpenWrt 21.02+ or GL.iNet 4.x):  sh lynx-router-setup.sh",
         "set -eu",
         "",
-        "# --- system: hostname, NTP server for the squad (headsets sync to the router) ----------",
+        "# --- system: hostname; time follows the squad leader (the router has no RTC) -----------",
         f"uci set system.@system[0].hostname={_q(r.router_name)}",
         "uci set system.ntp.enabled='1'",
         "uci set system.ntp.enable_server='1'",
+        "uci -q delete system.ntp.server || true",
+    ]
+    if r.leader is not None:
+        lines.append(f"uci add_list system.ntp.server={_q(r.node_ip(r.leader.id))}")
+    lines += [
         "",
         "# --- LAN -------------------------------------------------------------------------------",
         f"uci set network.lan.ipaddr={_q(r.router_ip)}",
@@ -248,7 +253,7 @@ def router_script(r: Roster) -> str:
         "",
         "uci commit",
         "# --- services ---------------------------------------------------------------------------",
-        "[ -x /etc/init.d/lynx-relay ] && /etc/init.d/lynx-relay enable || echo 'lynx-relay not installed yet (install-relay.sh)'",
+        "[ -x /etc/init.d/lynx-relay ] && /etc/init.d/lynx-relay enable || echo 'lynx-relay not installed (install-relay.sh)'",
         "[ -x /etc/init.d/umdns ] && /etc/init.d/umdns enable || true",
         "/etc/init.d/sysntpd restart || true",
         "/etc/init.d/dnsmasq restart",

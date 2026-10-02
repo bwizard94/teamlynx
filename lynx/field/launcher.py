@@ -254,13 +254,17 @@ def run_calibration(profile: NodeProfile, display: bool = True) -> FieldCalibrat
     imu_cal.heading_offset_deg, imu_cal.tared = 0.0, False
     imu_cal.declination_deg = site.declination_deg
     imu_cal.convergence_deg = site.convergence_deg
-    markers = profile.markers or sorted(site.markers)[:1]
+    markers = profile.markers or list(site.markers)[:3]
+    use_gnss = profile.station is None and bool(profile.gnss) and site.datum is not None
+    station = profile.station
+    if station is None and not use_gnss and len(markers) < 3 and site.stations:
+        station = next(iter(site.stations))
     link = ImuLink.open(profile.imu, imu_cal).start()
     gnss = None
     try:
-        if profile.station is None and profile.gnss and site.datum is not None:
+        if use_gnss:
             gnss = GnssReader.open(profile.gnss).start()
-        opts = StagingOptions(node=profile.node, markers=markers, station=profile.station)
+        opts = StagingOptions(node=profile.node, markers=markers, station=station)
         disp = PromptDisplay() if display else None
         try:
             cal = StagingCalibrator(site, link, opts, gnss=gnss, display=disp).run()

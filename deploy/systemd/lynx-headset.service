@@ -1,0 +1,27 @@
+[Unit]
+Description=TeamLynx headset (staging calibration, then the HUD on the helmet display)
+Documentation=file:///opt/lynx/src/docs/field/net-deployment.md
+After=graphical.target network-online.target
+Wants=network-online.target
+
+[Service]
+# READY=1 at the first HUD frame, then WATCHDOG=1 every second from the render loop:
+# a hung loop (camera, CUDA, display) is killed and restarted within WatchdogSec.
+Type=notify
+NotifyAccess=main
+User=@USER@
+Group=@USER@
+SupplementaryGroups=dialout video
+Environment=DISPLAY=:0
+Environment=XAUTHORITY=@HOME@/.Xauthority
+Environment=PYTHONUNBUFFERED=1
+ExecStart=@VENV@/bin/lynx-field headset --profile /etc/lynx/node.json
+Restart=always
+RestartSec=2
+# calibration (rail-switch taps at the staging markers) runs before READY
+TimeoutStartSec=15min
+WatchdogSec=10
+Nice=-5
+
+[Install]
+WantedBy=graphical.target
