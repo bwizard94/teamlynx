@@ -168,15 +168,47 @@ def screen_angle_deg(dx: float, dy: float) -> float:
     return wrap_deg_360(math.degrees(math.atan2(dx, -dy)))
 
 
+def compass_bearing_deg(origin_w: Sequence[float], target_w: Sequence[float]) -> float:
+    """Absolute compass bearing from ``origin_w`` to ``target_w``: clockwise from North, [0, 360).
+
+    ``atan2(dE, dN)``; returns 0 when the two points are vertically aligned.
+    """
+    de = float(target_w[0]) - float(origin_w[0])
+    dn = float(target_w[1]) - float(origin_w[1])
+    if math.hypot(de, dn) < 1e-9:
+        return 0.0
+    return wrap_deg_360(math.degrees(math.atan2(de, dn)))
+
+
 def horizontal_bearing_deg(observer: Pose, target_w: np.ndarray) -> float:
     """Bearing of ``target_w`` relative to the observer heading, clockwise, in (-180, 180]."""
     d = np.asarray(target_w, dtype=float) - observer.position
     if math.hypot(d[0], d[1]) < 1e-9:
         return 0.0
-    target_heading = math.degrees(math.atan2(d[0], d[1]))  # compass: atan2(East, North)
     heading = observer.euler[0]
-    rel = (target_heading - heading) % 360.0
+    rel = (compass_bearing_deg(observer.position, target_w) - heading) % 360.0
     return rel - 360.0 if rel > 180.0 else rel
+
+
+def indicator_direction(
+    intrinsics: Intrinsics, p_cam: Sequence[float], near: float = DEFAULT_NEAR, side_hint: float = 1.0
+) -> Tuple[float, float]:
+    """Screen-space direction ``(du, dv)`` from the image centre towards a camera-frame point.
+
+    In front of the near plane this is ``(fx x, fy y)``, parallel to ``(u - cx, v - cy)`` but not
+    divided by z. At or behind the near plane the horizontal component becomes
+    ``sign(x) fx sqrt(x^2 + z^2)`` so the indicator lands on the side edge the operator should turn
+    towards (see :meth:`Camera.project`). ``side_hint`` picks the side when ``x == 0``.
+    """
+    x, y, z = (float(c) for c in p_cam)
+    if z > near:
+        return intrinsics.fx * x, intrinsics.fy * y
+    side = math.copysign(1.0, x) if abs(x) > 1e-9 else math.copysign(1.0, side_hint)
+    du = side * intrinsics.fx * math.hypot(x, z)
+    dv = intrinsics.fy * y
+    if abs(du) < 1e-9 and abs(dv) < 1e-9:
+        du = side
+    return du, dv
 
 
 class Camera:
@@ -232,7 +264,6 @@ class Camera:
         x, y, z = (float(c) for c in p_c)
         distance = float(np.linalg.norm(p_c))
         bearing = horizontal_bearing_deg(self._pose, p_w)
-        dir_u, dir_v = intr.fx * x, intr.fy * y
 
         if z > self.near:
             u, v = intr.fx * x / z + intr.cx, intr.fy * y / z + intr.cy
@@ -249,17 +280,13 @@ class Camera:
                 )
             visibility = Visibility.OFF_SCREEN
         else:
+            # Behind: the point is folded into the image-plane-parallel half space, keeping its
+            # elevation but treating its horizontal offset as the full sqrt(x^2 + z^2) on the side
+            # of x. That is the direction of a point at the same elevation 90 deg to that side, so
+            # it equals (fx x, fy y) at z = 0 (continuous with OFF_SCREEN) and puts the indicator on
+            # the edge the operator should turn towards instead of the bottom.
             visibility = Visibility.BEHIND
-            # Fold the point into the image-plane-parallel half space: keep its elevation but
-            # treat its horizontal offset as the full sqrt(x^2 + z^2) on the side of x. This is
-            # the direction of a point at the same elevation 90 deg to that side, so it equals
-            # (fx x, fy y) at z = 0 (continuous with OFF_SCREEN) and, for anything behind, puts
-            # the indicator on the edge the operator should turn towards instead of the bottom.
-            side = math.copysign(1.0, x) if abs(x) > 1e-9 else (1.0 if bearing >= 0.0 else -1.0)
-            dir_u = side * intr.fx * math.hypot(x, z)
-            dir_v = intr.fy * y
-            if abs(dir_u) < 1e-9 and abs(dir_v) < 1e-9:
-                dir_u = side
+        dir_u, dir_v = indicator_direction(intr, (x, y, z), self.near, 1.0 if bearing >= 0.0 else -1.0)
 
         eu, ev = clamp_direction_to_rect(
             intr.cx, intr.cy, dir_u, dir_v, intr.width, intr.height, margin

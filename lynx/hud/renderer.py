@@ -21,19 +21,16 @@ import numpy as np
 
 from lynx.hud import widgets as W
 from lynx.hud.style import BGR, HudStyle, team_bgr
-from lynx.hud.types import HudState, ScreenPing, WorldPing
-from lynx.vision.geometry import (
-    edge_arrow_position,
-    pixel_to_angles,
-    project_point,
-    world_bearing_deg,
-)
+from lynx.hud.types import HudState, RenderedPing, WorldPing
+from lynx.spatial import Camera
+from lynx.vision.geometry import edge_arrow_position, pixel_to_angles, world_bearing_deg
 from lynx.vision.types import CameraModel, IffStatus
 
 
 class HudRenderer:
     def __init__(self, style: Optional[HudStyle] = None):
         self.style = style or HudStyle()
+        self.last_pings: List[RenderedPing] = []
 
     # ------------------------------------------------------------- main entry
     def render(self, frame: np.ndarray, state: HudState, copy: bool = True) -> np.ndarray:
@@ -116,34 +113,37 @@ class HudRenderer:
             tag = f"{e.callsign} {e.range_m:.0f}m" + (" STALE" if e.stale else "")
             W.text(img, tag, (x, y - d - 3 * s), color, 0.38, 1, "cb")
 
-    def _resolve_pings(self, state: HudState, cam: CameraModel) -> List[Tuple[ScreenPing, Optional[Tuple[float, float, float]]]]:
-        out: List[Tuple[ScreenPing, Optional[Tuple[float, float, float]]]] = []
-        for p in state.pings:
-            pr = project_point(state.pose, cam, (p.x, p.y, p.z))
-            if pr.in_view and pr.pixel is not None:
-                out.append((ScreenPing(pr.pixel[0], pr.pixel[1], p.label, pr.range_m, False, p.color), None))
-            else:
-                out.append((ScreenPing(0.0, 0.0, p.label, pr.range_m, not pr.in_front, p.color), pr.cam_xyz))
+    def layout_pings(self, state: HudState, cam: CameraModel, margin: float) -> List[RenderedPing]:
+        """Screen placement of every ping: world pings via :meth:`lynx.spatial.Camera.project`."""
+        out: List[RenderedPing] = []
+        if state.pings:
+            view = Camera(cam.intrinsics, state.pose.spatial_pose)
+            for p in state.pings:
+                pr = view.project((p.x, p.y, p.z))
+                if not pr.on_screen:
+                    pr = view.project((p.x, p.y, p.z), margin)
+                angle = math.radians(pr.edge_angle_deg - 90.0)  # clockwise-from-up -> image atan2
+                out.append(RenderedPing(p.ping_id, p.label, pr.u, pr.v, pr.on_screen, angle, pr.distance, p.color))
         for sp in state.screen_pings:
-            out.append((sp, None))
+            on_screen = (not sp.behind) and 0 <= sp.u < cam.width and 0 <= sp.v < cam.height
+            if on_screen:
+                out.append(RenderedPing(None, sp.label, sp.u, sp.v, True, 0.0, sp.range_m, sp.color))
+                continue
+            dx, dy = sp.u - cam.cx, sp.v - cam.cy
+            cam_xyz = (dx / cam.fx, dy / cam.fy, -1.0 if sp.behind else 1.0)
+            (u, v), angle = edge_arrow_position(cam, cam_xyz, margin)
+            out.append(RenderedPing(None, sp.label, u, v, False, angle, sp.range_m, sp.color))
         return out
 
     def draw_pings(self, img: np.ndarray, state: HudState, cam: CameraModel) -> None:
-        h, w = img.shape[:2]
         s = W.scale_of(img)
-        margin = 46 * s
-        for sp, cam_xyz in self._resolve_pings(state, cam):
-            color = sp.color or self.style.ping
-            on_screen = (not sp.behind) and cam_xyz is None and 0 <= sp.u < w and 0 <= sp.v < h
-            if on_screen:
-                W.chevron(img, (sp.u, sp.v), color, sp.label, sp.range_m)
-                continue
-            if cam_xyz is None:
-                # Caller-supplied pixel: direction from screen centre in pixels.
-                dx, dy = sp.u - cam.cx, sp.v - cam.cy
-                cam_xyz = (dx / cam.fx, dy / cam.fy, -1.0 if sp.behind else 1.0)
-            anchor, angle = edge_arrow_position(cam, cam_xyz, margin)
-            W.edge_arrow(img, anchor, angle, color, sp.label, sp.range_m)
+        self.last_pings = self.layout_pings(state, cam, 46 * s)
+        for rp in self.last_pings:
+            color = rp.color or self.style.ping
+            if rp.on_screen:
+                W.chevron(img, (rp.u, rp.v), color, rp.label, rp.range_m)
+            else:
+                W.edge_arrow(img, (rp.u, rp.v), rp.angle_rad, color, rp.label, rp.range_m)
 
     def draw_summary(self, img: np.ndarray, state: HudState) -> None:
         h, w = img.shape[:2]

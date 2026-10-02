@@ -1,29 +1,35 @@
-"""Self-contained data types for the vision / HUD pipeline.
+"""Data types for the vision / HUD pipeline.
 
-These mirror the Phase 1 telemetry schema (``lynx.net`` / ``lynx.spatial``)
-without importing it, so the vision stack can be developed and tested in
-isolation. Wiring them in later is a field-for-field copy; see
-``docs/vision-pipeline.md`` ("Interface contract").
+The camera model and operator pose are thin views onto :mod:`lynx.spatial`, which owns the frame
+conventions and the pinhole model (``docs/spatial-math.md``):
 
 World frame: local ENU tangent plane anchored at the staging-area datum.
     +X = east, +Y = north, +Z = up, metres.
-Attitude (degrees, intrinsic Z-X'-Y'' as flown):
+Attitude (degrees, identical to the wire ``heading/pitch/roll``):
     yaw   = compass heading, 0 = north, positive clockwise (toward east)
     pitch = nose up positive
     roll  = right side down positive
+
+Conversions to and from relay messages live in :mod:`lynx.headset.adapters`.
 """
 
 from __future__ import annotations
 
-import math
 from dataclasses import dataclass, field
 from enum import Enum
+from functools import cached_property
 from typing import Optional, Tuple
+
+from lynx.spatial import CameraPose, Intrinsics, Pose
 
 
 @dataclass(frozen=True)
 class OperatorPose:
-    """6-DoF pose of the local headset camera in the shared world frame."""
+    """6-DoF pose of the local headset camera in the shared world frame.
+
+    The camera centre is the pose position and the camera is boresighted to the body frame, so
+    :attr:`camera_pose` is ``CameraPose.from_body_pose(spatial_pose)`` with an identity mount.
+    """
 
     x: float
     y: float
@@ -38,6 +44,22 @@ class OperatorPose:
     @property
     def position(self) -> Tuple[float, float, float]:
         return (self.x, self.y, self.z)
+
+    @cached_property
+    def spatial_pose(self) -> Pose:
+        return Pose.from_euler(self.x, self.y, self.z, self.yaw, self.pitch, self.roll)
+
+    @cached_property
+    def camera_pose(self) -> CameraPose:
+        return CameraPose.from_body_pose(self.spatial_pose)
+
+    @classmethod
+    def from_pose(
+        cls, pose: Pose, node_id: int = 0, callsign: str = "LYNX-0", team_color: str = "green"
+    ) -> "OperatorPose":
+        heading, pitch, roll = pose.euler
+        x, y, z = (float(c) for c in pose.position)
+        return cls(x, y, z, heading, pitch, roll, node_id, callsign, team_color)
 
 
 @dataclass(frozen=True)
@@ -66,34 +88,45 @@ class TeammateTrack:
 
 @dataclass(frozen=True)
 class CameraModel:
-    """Ideal pinhole camera. VFOV is derived from HFOV and aspect if omitted."""
+    """Ideal pinhole camera described by resolution and FOV.
+
+    All intrinsics come from :meth:`lynx.spatial.Intrinsics.from_fov`; VFOV is derived from HFOV
+    and aspect (square pixels) if omitted.
+    """
 
     width: int = 1280
     height: int = 720
     hfov_deg: float = 78.0
     vfov_deg: Optional[float] = None
 
+    @cached_property
+    def intrinsics(self) -> Intrinsics:
+        return Intrinsics.from_fov(self.width, self.height, self.hfov_deg, self.vfov_deg)
+
+    @classmethod
+    def from_intrinsics(cls, intr: Intrinsics) -> "CameraModel":
+        vfov = None if abs(intr.fx - intr.fy) < 1e-9 else intr.vfov_deg
+        return cls(intr.width, intr.height, intr.hfov_deg, vfov)
+
     @property
     def fx(self) -> float:
-        return (self.width / 2.0) / math.tan(math.radians(self.hfov_deg) / 2.0)
+        return self.intrinsics.fx
 
     @property
     def fy(self) -> float:
-        if self.vfov_deg is None:
-            return self.fx
-        return (self.height / 2.0) / math.tan(math.radians(self.vfov_deg) / 2.0)
+        return self.intrinsics.fy
 
     @property
     def cx(self) -> float:
-        return self.width / 2.0
+        return self.intrinsics.cx
 
     @property
     def cy(self) -> float:
-        return self.height / 2.0
+        return self.intrinsics.cy
 
     @property
     def vfov(self) -> float:
-        return math.degrees(2.0 * math.atan((self.height / 2.0) / self.fy))
+        return self.intrinsics.vfov_deg
 
     def resized(self, width: int, height: int) -> "CameraModel":
         return CameraModel(width, height, self.hfov_deg, self.vfov_deg)

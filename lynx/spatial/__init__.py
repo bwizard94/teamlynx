@@ -11,7 +11,9 @@ from .projection import (
     Projection,
     Visibility,
     clamp_direction_to_rect,
+    compass_bearing_deg,
     horizontal_bearing_deg,
+    indicator_direction,
     screen_angle_deg,
 )
 from .raycast import HitKind, RayHit, intersect_ground, raycast, raycast_from_pose
@@ -52,9 +54,11 @@ __all__ = [
     "RayHit",
     "Visibility",
     "clamp_direction_to_rect",
+    "compass_bearing_deg",
     "euler_to_matrix",
     "euler_to_quat",
     "horizontal_bearing_deg",
+    "indicator_direction",
     "intersect_ground",
     "matrix_to_euler",
     "matrix_to_quat",

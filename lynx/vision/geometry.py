@@ -1,24 +1,21 @@
-"""Pinhole projection between the ENU world frame and the headset camera.
+"""Vision-side view of the shared camera model.
 
-Conventions (see ``lynx.vision.types``):
+Every transform here delegates to :mod:`lynx.spatial` (frames, Euler convention, pinhole
+intrinsics, off-screen indicator direction), so the IFF associator, the synthetic scene, the HUD
+and the Phase 1 testbench all project through one implementation. This module only adds the
+quantities the vision stack needs on top: boresight-relative azimuth / elevation and the
+"unclamped" pixel of an in-front point.
+
+Conventions (``docs/spatial-math.md``):
     world  : ENU, +X east, +Y north, +Z up.
-    body   : forward f, right r, up u unit vectors expressed in world.
     camera : OpenCV optical frame, +x right, +y down, +z forward.
 
-With heading psi (clockwise from north), pitch theta and roll phi:
+For a world point p, ``p_c = R_cw (p - C_w)`` with ``R_cw = R_CB R_wb^T`` and
 
-    f  = ( sin psi cos theta,  cos psi cos theta,  sin theta)
-    r0 = ( cos psi,           -sin psi,            0        )
-    u0 = (-sin psi sin theta, -cos psi sin theta,  cos theta)
-    r  =  r0 cos phi - u0 sin phi        (roll right => right side down)
-    u  =  u0 cos phi + r0 sin phi
+    u = c_x + f_x x_c / z_c,   v = c_y + f_y y_c / z_c,   f_x = (W/2) / tan(HFOV/2)
 
-For a world point p seen from camera centre o, d = p - o and
-
-    x_c = d . r,   y_c = -(d . u),   z_c = d . f
-    u_px = c_x + f_x x_c / z_c,   v_px = c_y + f_y y_c / z_c
-
-which is the standard pinhole model with f_x = (W/2) / tan(HFOV/2).
+    azimuth   = atan2(x_c, z_c)                 (+ right of boresight)
+    elevation = atan2(-y_c, sqrt(x_c^2 + z_c^2)) (+ above boresight)
 """
 
 from __future__ import annotations
@@ -29,21 +26,21 @@ from typing import Optional, Sequence, Tuple
 
 import numpy as np
 
+from lynx.spatial import (
+    DEFAULT_NEAR,
+    R_CB,
+    clamp_direction_to_rect,
+    compass_bearing_deg,
+    euler_to_matrix,
+    indicator_direction,
+    wrap_deg_180,
+)
 from lynx.vision.types import CameraModel, OperatorPose
 
 
 def rotation_world_to_camera(yaw_deg: float, pitch_deg: float, roll_deg: float) -> np.ndarray:
-    """3x3 matrix R such that p_cam = R @ (p_world - o)."""
-    psi, theta, phi = (math.radians(a) for a in (yaw_deg, pitch_deg, roll_deg))
-    sp, cp = math.sin(psi), math.cos(psi)
-    st, ct = math.sin(theta), math.cos(theta)
-    sr, cr = math.sin(phi), math.cos(phi)
-    f = np.array([sp * ct, cp * ct, st])
-    r0 = np.array([cp, -sp, 0.0])
-    u0 = np.array([-sp * st, -cp * st, ct])
-    r = r0 * cr - u0 * sr
-    u = u0 * cr + r0 * sr
-    return np.stack([r, -u, f])
+    """3x3 matrix ``R_cw = R_CB @ R_wb^T`` such that ``p_cam = R_cw @ (p_world - o)``."""
+    return R_CB @ euler_to_matrix(yaw_deg, pitch_deg, roll_deg).T
 
 
 @dataclass(frozen=True)
@@ -52,24 +49,23 @@ class Projection:
     range_m: float
     azimuth_deg: float  # relative to boresight, + right
     elevation_deg: float  # relative to boresight, + up
-    pixel: Optional[Tuple[float, float]]  # None when behind the image plane
+    pixel: Optional[Tuple[float, float]]  # None when at/behind the near plane
     in_front: bool
     in_view: bool
 
 
 def world_to_camera(pose: OperatorPose, point: Sequence[float]) -> np.ndarray:
-    R = rotation_world_to_camera(pose.yaw, pose.pitch, pose.roll)
-    d = np.asarray(point, dtype=np.float64) - np.asarray(pose.position, dtype=np.float64)
-    return R @ d
+    return pose.camera_pose.world_to_camera(np.asarray(point, dtype=np.float64))
 
 
 def project_point(
     pose: OperatorPose,
     camera: CameraModel,
     point: Sequence[float],
-    min_depth: float = 0.05,
+    min_depth: float = DEFAULT_NEAR,
 ) -> Projection:
-    xc, yc, zc = (float(v) for v in world_to_camera(pose, point))
+    p_c = world_to_camera(pose, point)
+    xc, yc, zc = (float(v) for v in p_c)
     rng = math.sqrt(xc * xc + yc * yc + zc * zc)
     az = math.degrees(math.atan2(xc, zc))
     el = math.degrees(math.atan2(-yc, math.hypot(xc, zc)))
@@ -77,32 +73,27 @@ def project_point(
     pixel = None
     in_view = False
     if in_front:
-        u = camera.cx + camera.fx * xc / zc
-        v = camera.cy + camera.fy * yc / zc
-        pixel = (u, v)
-        in_view = 0.0 <= u < camera.width and 0.0 <= v < camera.height
+        intr = camera.intrinsics
+        pixel = intr.project_camera_point(p_c)
+        in_view = intr.contains(*pixel)
     return Projection((xc, yc, zc), rng, az, el, pixel, in_front, in_view)
 
 
 def pixel_to_angles(camera: CameraModel, u: float, v: float) -> Tuple[float, float]:
     """Boresight-relative (azimuth, elevation) in degrees of a pixel ray."""
-    x = (u - camera.cx) / camera.fx
-    y = (v - camera.cy) / camera.fy
-    az = math.degrees(math.atan2(x, 1.0))
-    el = math.degrees(math.atan2(-y, math.hypot(x, 1.0)))
-    return az, el
+    x, y, z = camera.intrinsics.pixel_to_ray(u, v)
+    return math.degrees(math.atan2(x, z)), math.degrees(math.atan2(-y, math.hypot(x, z)))
 
 
 def world_bearing_deg(pose: OperatorPose, point: Sequence[float]) -> float:
     """Absolute compass bearing (0..360, clockwise from north) to a point."""
-    dx = point[0] - pose.x
-    dy = point[1] - pose.y
-    return math.degrees(math.atan2(dx, dy)) % 360.0
+    return compass_bearing_deg(pose.position, point)
 
 
 def wrap_deg(a: float) -> float:
     """Wrap an angle to [-180, 180)."""
-    return (a + 180.0) % 360.0 - 180.0
+    w = wrap_deg_180(a)
+    return -180.0 if w == 180.0 else w
 
 
 def edge_arrow_position(
@@ -112,21 +103,11 @@ def edge_arrow_position(
 ) -> Tuple[Tuple[float, float], float]:
     """Screen-border anchor and angle (radians, image coords) for an off-screen target.
 
-    Uses the camera-frame lateral components (x_c, y_c) as the turn
-    direction, which stays correct for targets behind the operator where
-    the perspective divide would mirror the pixel.
+    The direction is :func:`lynx.spatial.indicator_direction`, the same rule
+    :meth:`lynx.spatial.Camera.project` uses, so targets behind the operator land on the side edge
+    to turn towards instead of being mirrored by the perspective divide.
     """
-    xc, yc, zc = (float(v) for v in cam_xyz)
-    dx, dy = xc * camera.fx, yc * camera.fy
-    if zc > 0.0:
-        dx, dy = dx / max(zc, 1e-6), dy / max(zc, 1e-6)
-    if math.hypot(dx, dy) < 1e-9:
-        dx, dy = 1.0, 0.0  # directly behind: cue a right turn
-    angle = math.atan2(dy, dx)
-    hw = camera.width / 2.0 - margin
-    hh = camera.height / 2.0 - margin
-    c, s = math.cos(angle), math.sin(angle)
-    tx = hw / abs(c) if abs(c) > 1e-9 else float("inf")
-    ty = hh / abs(s) if abs(s) > 1e-9 else float("inf")
-    t = min(tx, ty)
-    return (camera.cx + c * t, camera.cy + s * t), angle
+    intr = camera.intrinsics
+    du, dv = indicator_direction(intr, cam_xyz)
+    anchor = clamp_direction_to_rect(intr.cx, intr.cy, du, dv, intr.width, intr.height, margin)
+    return anchor, math.atan2(dv, du)

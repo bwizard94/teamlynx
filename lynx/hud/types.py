@@ -1,4 +1,4 @@
-"""HUD input types. Self-contained; see docs/vision-pipeline.md for wiring."""
+"""HUD input types. Relay messages map onto these in :mod:`lynx.headset.adapters`."""
 
 from __future__ import annotations
 
@@ -37,6 +37,23 @@ class ScreenPing:
     label: str = "PING"
     range_m: Optional[float] = None
     behind: bool = False
+    color: Optional[Tuple[int, int, int]] = None
+
+
+@dataclass(frozen=True)
+class RenderedPing:
+    """Where the renderer drew a ping: a chevron at ``(u, v)`` or an edge arrow anchored there.
+
+    ``angle_rad`` is the arrow direction in image coordinates (``atan2(dv, du)``, v down).
+    """
+
+    ping_id: Optional[int]
+    label: str
+    u: float
+    v: float
+    on_screen: bool
+    angle_rad: float
+    range_m: Optional[float]
     color: Optional[Tuple[int, int, int]] = None
 
 

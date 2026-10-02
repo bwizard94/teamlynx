@@ -172,14 +172,11 @@ class SyntheticScene:
 
     # ------------------------------------------------------------------ render
     def _project(self, pose: OperatorPose, pts: np.ndarray) -> Optional[np.ndarray]:
-        cam = self.camera
-        out = []
-        for p in pts:
-            xc, yc, zc = world_to_camera(pose, p)
-            if zc <= 0.2:
-                return None
-            out.append((cam.cx + cam.fx * xc / zc, cam.cy + cam.fy * yc / zc))
-        return np.array(out)
+        p_c = world_to_camera(pose, pts)
+        if (p_c[:, 2] <= 0.2).any():
+            return None
+        intr = self.camera.intrinsics
+        return np.array([intr.project_camera_point(p) for p in p_c])
 
     def _draw_horizon(self, img: np.ndarray, pose: OperatorPose) -> None:
         h, w = img.shape[:2]
@@ -269,12 +266,16 @@ class SyntheticScene:
         conf = float(np.clip(self.rng.normal(0.8, 0.08), 0.36, 0.99))
         dets.append(Detection(x1, y1, x2, y2, conf, cat, name))
 
-    def _draw_people(self, img: np.ndarray, pose: OperatorPose, t: float, dets: list, truth: list) -> None:
-        items = []
-        for p in self.people:
-            x, y = p.position(t)
-            items.append((math.hypot(x - pose.x, y - pose.y), p, x, y))
-        for _, p, x, y in sorted(items, key=lambda it: -it[0]):
+    def people_at(self, t: float) -> List[Tuple[str, bool, float, float]]:
+        """``(name, friendly, x, y)`` ground positions of the scripted people at time ``t``."""
+        return [(p.name, p.friendly, *p.position(t)) for p in self.people]
+
+    def _draw_people(
+        self, img: np.ndarray, pose: OperatorPose, people: Sequence[Tuple[str, bool, float, float]],
+        dets: list, truth: list,
+    ) -> None:
+        items = [(math.hypot(x - pose.x, y - pose.y), name, friendly, x, y) for name, friendly, x, y in people]
+        for _, name, friendly, x, y in sorted(items, key=lambda it: -it[0]):
             foot = project_point(pose, self.camera, (x, y, 0.0))
             top = project_point(pose, self.camera, (x, y, PERSON_HEIGHT))
             if foot.pixel is None or top.pixel is None:
@@ -298,42 +299,56 @@ class SyntheticScene:
                 cv2.line(img, (int(u + s * w * 0.45), int(vt + hgt * 0.2)),
                          (int(u + s * w * 0.6), int(vt + hgt * 0.5)), body, max(1, int(w * 0.14)), cv2.LINE_AA)
             box = (u - w / 2 - 0.05 * hgt, vt, u + w / 2 + 0.05 * hgt, vf)
-            truth.append((p.name, p.friendly, box))
+            truth.append((name, friendly, box))
             self._emit(dets, box, "person", "person")
 
-    def render_topdown(self, size: Tuple[int, int] = (320, 240), span_m: float = 110.0) -> np.ndarray:
+    def render_topdown(
+        self,
+        size: Tuple[int, int] = (320, 240),
+        span_m: float = 110.0,
+        people: Optional[Sequence[Tuple[str, bool, float, float]]] = None,
+        center: Tuple[float, float] = (0.0, 0.0),
+    ) -> np.ndarray:
         """North-up overhead view (stand-in for a UAV / chokepoint aux camera)."""
         w, h = size
         img = np.full((h, w, 3), (38, 44, 40), np.uint8)
         k = min(w, h) / span_m
 
         def px(x: float, y: float) -> Tuple[int, int]:
-            return int(w / 2 + x * k), int(h / 2 - y * k)
+            return int(w / 2 + (x - center[0]) * k), int(h / 2 - (y - center[1]) * k)
 
         for b in self.boxes:
             p1 = px(b.cx - b.w / 2, b.cy + b.d / 2)
             p2 = px(b.cx + b.w / 2, b.cy - b.d / 2)
             cv2.rectangle(img, p1, p2, (b.shade + 40,) * 3, -1)
-        for p in self.people:
-            x, y = p.position(self.t)
+        for _, _, x, y in (self.people_at(self.t) if people is None else people):
             cv2.circle(img, px(x, y), 3, (190, 200, 190), -1, cv2.LINE_AA)
-        cv2.circle(img, px(0, 0), 4, (255, 255, 255), 1, cv2.LINE_AA)
+        cv2.circle(img, px(*center), 4, (255, 255, 255), 1, cv2.LINE_AA)
         noise = self.rng.normal(0, 5, img.shape).astype(np.int16)
         return np.clip(img.astype(np.int16) + noise, 0, 255).astype(np.uint8)
 
-    def step(self, dt: float = 1.0 / 30.0) -> SyntheticFrame:
-        self.t += dt
-        t = self.t
-        pose = self.pose_at(t)
+    def render_view(
+        self, pose: OperatorPose, people: Sequence[Tuple[str, bool, float, float]]
+    ) -> Tuple[np.ndarray, List[Detection], list]:
+        """Render the low-light view from ``pose`` with ``people`` standing at ``(x, y)``.
+
+        Returns ``(frame, simulated_detections, truth)``.
+        """
         img = np.empty((self.camera.height, self.camera.width, 3), np.uint8)
         self._draw_horizon(img, pose)
         dets: List[Detection] = []
         truth: list = []
         self._draw_boxes(img, pose, dets, truth)
-        self._draw_people(img, pose, t, dets, truth)
+        self._draw_people(img, pose, people, dets, truth)
         f = img.astype(np.float32) * self.low_light
         f += self.rng.normal(0, self.sensor_noise, f.shape).astype(np.float32)
-        frame = np.clip(f, 0, 255).astype(np.uint8)
+        return np.clip(f, 0, 255).astype(np.uint8), dets, truth
+
+    def step(self, dt: float = 1.0 / 30.0) -> SyntheticFrame:
+        self.t += dt
+        t = self.t
+        pose = self.pose_at(t)
+        frame, dets, truth = self.render_view(pose, self.people_at(t))
         teammates = []
         for p in self.people:
             if not p.friendly:
