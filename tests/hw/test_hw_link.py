@@ -258,16 +258,17 @@ def test_serial_pose_source_routes_rail_to_headset_ping_path():
     dev.gesture(ButtonEvent.SINGLE, press_t_us=press)
     run_for(clock, dev, link, 0.01)
     s = src.read(0.0)
-    # Trigger frame: pose is the attitude at the press, which is what the headset raycasts.
-    assert s.trigger and s.pose.euler == pytest.approx((30.0, -10.0, 0.0), abs=1e-4)
+    # Live pose for the HUD; the press-time attitude rides on the rail command.
+    assert s.trigger and s.pose.euler[0] == pytest.approx(120.0)
     assert [c.action for c in s.rail] == [RailAction.PING]
+    assert s.rail[0].aim.heading == pytest.approx(30.0) and s.rail[0].aim.pitch == pytest.approx(-10.0)
     s = src.read(0.0)
     assert not s.trigger and s.pose.euler[0] == pytest.approx(120.0)
     dev.gesture(ButtonEvent.DOUBLE)
     dev.gesture(ButtonEvent.LONG)
     run_for(clock, dev, link, 0.01)
     s = src.read(0.0)
-    assert s.trigger  # one trigger per frame for the DOUBLE; LONG only via .rail
+    assert s.trigger  # DOUBLE triggers; LONG is only visible via .rail
     assert [c.action for c in s.rail] == [RailAction.PING_CONTACT, RailAction.CANCEL_LAST]
     dev.cal_status = 0
     run_for(clock, dev, link, 0.05)

@@ -127,6 +127,12 @@ def test_cli_headless_run_writes_frame(relay, tmp_path):
     assert rc == 0 and png.exists() and png.stat().st_size > 5_000
 
 
-def test_cli_rejects_missing_serial_plugin(relay):
-    with pytest.raises(SystemExit, match="lynx.hw"):
-        main(["--url", relay.url, "--pose", "serial:/dev/ttyUSB0", "--headless", "--frames", "1"])
+def test_cli_serial_pose_unopenable_port_exits_cleanly(relay):
+    with pytest.raises(SystemExit, match="cannot open head tracker"):
+        main(["--url", relay.url, "--pose", "serial:/dev/lynx-no-such-port", "--headless", "--frames", "1"])
+
+
+def test_cli_serial_pose_mock_device_runs(relay):
+    rc = main(["--url", relay.url, "--node", "8", "--callsign", "IMU", "--pose", "serial:mock://", "--headless",
+               "--frames", "5", "--width", "320", "--height", "180", "--fps", "0", "--ping-at", "2"])
+    assert rc == 0

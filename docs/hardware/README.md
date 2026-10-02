@@ -71,11 +71,11 @@ link.health().summary()
 Importing `lynx.hw` registers the `serial` pose source (`lynx/hw/headset_source.py`). SPEC is
 `PORT[?cal=imu.json&mount=left-side&declination=-3.5&convergence=0&baud=460800&rate=100]`.
 
-* `pose` is the head attitude at the CLI's `--x --y --eye-height`, since the IMU gives no
-  position. On a trigger frame it is the attitude **at the press**, so the headset's
-  `drop_ping(sample.pose)` lands where the operator aimed.
-* `trigger` fires once per SINGLE or DOUBLE. `flags` carries `PING_SWITCH` and `IMU_DEGRADED`.
-* The base `PoseSample` contract cannot express "CONTACT ping" (DOUBLE) or "cancel last" (LONG).
-  They are exposed as `SerialPoseSample.rail`, a tuple of `RailCommand`. A headset that reads it
-  gets the same gesture map as `lynx-sim`. One that ignores it treats DOUBLE as an ordinary ping
-  and ignores LONG.
+* `pose` is the live head attitude at the CLI's `--x --y --eye-height`, since the IMU gives no
+  position. `flags` carries `PING_SWITCH` and `IMU_DEGRADED`.
+* `SerialPoseSample.rail` carries the frame's gesture commands, each with the press-time
+  attitude (`aim`). `HeadsetClient.handle_rail` applies the same map as `lynx-sim`: single click
+  → selected ping, double click → CONTACT ping, long press → cancel last. Pings are raycast from
+  `aim`.
+* `trigger` is also set for single and double clicks, for consumers that only know the base
+  contract. Those consumers ping at the live pose and cannot see long presses.

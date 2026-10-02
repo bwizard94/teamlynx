@@ -12,17 +12,13 @@ Keys: ``cal`` (calibration JSON from ``python -m lynx.hw tare --cal``), ``mount`
 
 Contract mapping (``lynx.headset.pose.PoseSample``):
 
-* ``pose``     head attitude from the BNO085 at ``initial.position`` (the IMU gives no position).
-               On a trigger frame it is the attitude at the instant of the *press*, so the
-               headset's ``drop_ping(sample.pose)`` raycasts where the operator aimed, even though
-               a SINGLE is only classified after the double-click window.
-* ``trigger``  True once per SINGLE or DOUBLE gesture.
+* ``pose``     latest head attitude from the BNO085 at ``initial.position`` (no IMU position).
+* ``trigger``  True on a frame with a SINGLE or DOUBLE gesture (for contract-only consumers).
 * ``flags``    ``PING_SWITCH`` while the switch is held, ``IMU_DEGRADED`` unless the link is OK.
-
-The base contract has no way to express "CONTACT ping" or "cancel my last ping", so every frame's
-gesture commands are also exposed as :attr:`SerialPoseSample.rail` (a ``PoseSample`` subclass, so
-headsets that ignore it are unaffected). A headset that reads ``rail`` handles them itself:
-DOUBLE -> CONTACT ping, LONG -> cancel last ping.
+* ``rail``     (:class:`SerialPoseSample` extension) the frame's gesture commands, each with the
+               head attitude at the instant of the press (``aim``). ``HeadsetClient.handle_rail``
+               consumes it: SINGLE -> selected ping, DOUBLE -> CONTACT ping, LONG -> cancel last,
+               raycast from ``aim`` so classification latency never moves the ping.
 """
 
 from __future__ import annotations
@@ -90,13 +86,7 @@ class SerialImuPoseSource:
         pose = head.to_pose(self.position) if head is not None else self._fallback
         if head is not None:
             self._fallback = pose
-        trigger = False
-        for cmd in commands:
-            if cmd.action in (RailAction.PING, RailAction.PING_CONTACT) and not trigger:
-                trigger = True
-                aim = cmd.aim or head
-                if aim is not None:
-                    pose = aim.to_pose(self.position)
+        trigger = any(cmd.action in (RailAction.PING, RailAction.PING_CONTACT) for cmd in commands)
         return SerialPoseSample(pose, trigger=trigger, flags=self.head.telemetry_flags(), rail=tuple(commands))
 
     def handle_key(self, key: int) -> bool:

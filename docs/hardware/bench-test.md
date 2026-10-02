@@ -131,8 +131,8 @@ lynx-sim --node 2 --callsign BRAVO --team green --y 20 --heading 180     # obser
 | 8.4 | double-click | a CONTACT ping |
 | 8.5 | hold | your last ping is cancelled in both windows |
 
-The headset client (`lynx-headset --pose serial:P?cal=imu.json`) takes the same pose and
-single/double trigger path; see [../headset.md](../headset.md).
+Repeat 8.2–8.5 with the headset client (`lynx-headset --pose "serial:P?cal=imu.json"`). It uses
+the same gesture map; see [../headset.md](../headset.md).
 
 ## 9. Fault injection
 
