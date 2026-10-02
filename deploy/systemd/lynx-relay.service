@@ -1,0 +1,25 @@
+[Unit]
+Description=TeamLynx field relay (squad-leader Jetson; secondary to the router by default)
+Documentation=file:///opt/lynx/src/docs/field/net-deployment.md
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=simple
+User=@USER@
+Group=@USER@
+# LYNX_RELAY_ARGS, e.g. "--role secondary --upstream ws://relay.lynx:8765 --log /var/log/lynx --log-gz --mdns"
+EnvironmentFile=-/etc/lynx/relay.env
+Environment=PYTHONUNBUFFERED=1
+ExecStart=@VENV@/bin/lynx-field relay $LYNX_RELAY_ARGS
+Restart=always
+RestartSec=1
+Nice=-5
+NoNewPrivileges=yes
+ProtectSystem=strict
+ProtectHome=read-only
+ReadWritePaths=/var/log/lynx
+PrivateTmp=yes
+
+[Install]
+WantedBy=multi-user.target

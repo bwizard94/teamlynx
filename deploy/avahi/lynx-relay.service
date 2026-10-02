@@ -1,0 +1,13 @@
+<?xml version="1.0" standalone='no'?>
+<!DOCTYPE service-group SYSTEM "avahi-service.dtd">
+<!-- Secondary relay on the squad-leader Jetson: /etc/avahi/services/lynx-relay.service -->
+<service-group>
+  <name replace-wildcards="yes">lynx-relay on %h</name>
+  <service>
+    <type>_lynx-relay._tcp</type>
+    <port>8765</port>
+    <txt-record>role=secondary</txt-record>
+    <txt-record>prio=10</txt-record>
+    <txt-record>squad=LYNX</txt-record>
+  </service>
+</service-group>

@@ -1,0 +1,7 @@
+{
+  "lynx-relay": {
+    "service": "_lynx-relay._tcp.local",
+    "port": 8765,
+    "txt": ["role=primary", "prio=0", "squad=LYNX"]
+  }
+}

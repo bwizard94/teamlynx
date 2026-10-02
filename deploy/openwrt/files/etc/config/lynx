@@ -1,0 +1,14 @@
+config relay 'relay'
+	option enabled '1'
+	# primary on the router; a squad-leader Jetson runs the secondary (deploy/systemd/lynx-relay.service)
+	option role 'primary'
+	option priority '0'
+	option squad 'LYNX'
+	option port '8765'
+	# downlink telemetry tick in ms (0 = one frame per message; see docs/field/net-network.md)
+	option tick_ms '25'
+	# session log directory, e.g. a USB stick at /mnt/sda1/lynx; empty = no log on the router
+	option log ''
+	option log_hz '5'
+	option python '/usr/bin/python3'
+	option pythonpath '/opt/lynx'

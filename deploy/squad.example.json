@@ -1,0 +1,26 @@
+{
+  "squad": "LYNX",
+  "ssid": "LYNX-SQUAD",
+  "psk": "change-this-squad-passphrase",
+  "country": "GB",
+  "band": "2g",
+  "channel": 6,
+  "htmode": "HT20",
+  "subnet": "192.168.8.0/24",
+  "router_name": "lynx-router",
+  "relay_port": 8765,
+  "disable_other_radios": true,
+  "site": "/etc/lynx/site.json",
+  "nodes": [
+    {"id": 1, "callsign": "ALPHA", "mac": "48:b0:2d:00:00:01", "team": "blue", "role": "leader", "gnss": "/dev/lynx-gnss"},
+    {"id": 2, "callsign": "BRAVO", "mac": "48:b0:2d:00:00:02", "team": "blue"},
+    {"id": 3, "callsign": "CHARLIE", "mac": "48:b0:2d:00:00:03", "team": "blue"},
+    {"id": 4, "callsign": "DELTA", "mac": "48:b0:2d:00:00:04", "team": "blue"},
+    {"id": 5, "callsign": "ECHO", "mac": "48:b0:2d:00:00:05", "team": "blue"},
+    {"id": 6, "callsign": "FOXTROT", "mac": "48:b0:2d:00:00:06", "team": "green"},
+    {"id": 7, "callsign": "GOLF", "mac": "48:b0:2d:00:00:07", "team": "green"},
+    {"id": 8, "callsign": "HOTEL", "mac": "48:b0:2d:00:00:08", "team": "green"},
+    {"id": 9, "callsign": "INDIA", "mac": "48:b0:2d:00:00:09", "team": "green"},
+    {"id": 10, "callsign": "JULIET", "mac": "48:b0:2d:00:00:0a", "team": "green"}
+  ]
+}
