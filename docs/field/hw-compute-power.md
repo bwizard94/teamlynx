@@ -186,14 +186,48 @@ every software, cable or power fault turns the IR off, and S1 is a hardware kill
   no banding. In V4L2, `exposure_time_absolute` is in 100 µs units, so use multiples of 10.
 * **Pin 32 as PWM.** Enable the pin's PWM function with `sudo /opt/nvidia/jetson-io/jetson-io.py`.
   If your JetPack's pin list differs, any 3.3 V GPIO with software PWM at 1 kHz works.
-* **Required interlock logic for the host software** (owned by the software side, not this
-  doc): IR_EN may go high only when all of the following hold:
-  * night/edge mode is active
-  * the pod pitch from the IMU is within −45°…+30° of level, so it is not flipped up to stow
-  * the pose stream is healthy (no `IMU_DEGRADED`)
-  * the operator has armed it in software
+### 5.1 Host interlock (`lynx/hw/ir_interlock.py`)
 
-  It must drop to low on any fault, and after 120 s without operator re-arm.
+`lynx-headset --ir-interlock` drives IR_EN. IR_EN goes high only when all of the following
+hold, re-evaluated every frame:
+
+* edge (night) mode is on (key `e` / `--edge`)
+* the pod is deployed: pitch from the head tracker within −45°…+30° and |roll| ≤ 60°. A pod
+  flipped up to stow, or a helmet set down, fails this
+* the head-tracker link is `OK`. With `--ir-imu usable`, `DEGRADED` is also accepted, e.g. a
+  low magnetometer calibration, which does not affect pitch. A pose source with no head
+  tracker (keyboard) never enables IR
+* the operator has armed it in software: key `n`, or `--ir-arm` at start. S1 is the hardware
+  arm and cannot be read by the Jetson
+
+The output behaves as follows:
+
+* **Leaving edge mode** drives the output low but keeps the arm.
+* **A trip** is any of these while armed:
+  * the pod is stowed
+  * the attitude is unknown
+  * the IMU is not OK
+  * any exception, including a GPIO write failure
+  * a watchdog timeout: no update for 0.5 s, checked by a background thread
+
+  A trip drives IR_EN low, **disarms**, and refuses re-arming for **120 s**. After the lockout,
+  IR stays off until the operator arms again. The HUD shows `IR ON / SAFE / INHIBITED /
+  LOCKOUT nn s (reason)` on the `IR` telemetry line, plus an alert during lockout.
+* **Close, interpreter exit (atexit), SIGTERM and SIGHUP** drive the pin low and release it.
+
+```bash
+lynx-headset --pose "serial:/dev/ttyACM0?cal=imu.json" --source 0 --ir-interlock   # n to arm
+lynx-headset ... --ir-interlock --ir-gpio mock      # dry run anywhere (no pin is touched)
+python -m lynx.hw.ir_interlock off                  # force IR_EN low, e.g. ExecStopPost=
+```
+
+Backends: `--ir-gpio auto` (default) uses `Jetson.GPIO` (BOARD numbering, pin 32 set as an
+output with an initial LOW) and falls back to a mock with a warning on other hosts.
+`--ir-gpio jetson` refuses to start without it.
+
+**SIGKILL and hard crashes cannot be caught, and Jetson.GPIO keeps the last level.** Run the
+headset as a systemd service with `ExecStopPost=/usr/bin/python3 -m lynx.hw.ir_interlock off`.
+A power loss is covered by the hardware: Jetson off means Q2 off, Q1 on, IR off.
 
 ## 6. Connectors and pinouts
 

@@ -75,8 +75,10 @@ mechanics, power, display and harness.
    six screws.
 6. **The magnetic USB-C breakaway at the shoulder is the neck-safety release.** The Jetson
    reboots when it separates.
-7. **The IR interlock requires host-software logic:** IR_EN on Jetson header pin 32,
-   night/edge mode, pod not stowed, IMU healthy, 120 s re-arm. The hardware is fail-safe
-   without it, but the software has to be written.
+7. **IR interlock host logic** is in `lynx/hw/ir_interlock.py` and enabled with
+   `lynx-headset --ir-interlock`. It drives IR_EN on pin 32 when armed, in edge mode, with
+   the pod deployed and the IMU OK. A trip forces a 120 s lockout and needs a re-arm. Under
+   systemd, add the `ExecStopPost` stop hook, because SIGKILL leaves the pin at its last
+   level.
 8. **ESP32 box mount.** It goes on a Picatinny segment via an ARC-to-1913 adapter (ARC rail
    dimensions are not published), with a strap variant for helmets without rails.

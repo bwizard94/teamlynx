@@ -57,10 +57,12 @@ blink reflex, so the controls below are mandatory, not advisory.
    kitting and maintenance, and whenever the helmet is off.
 4. **Fail-safe DIM interlock.** Jetson off, booting, crashed or unplugged all mean IR off
    (Q1/Q2 network).
-5. **Software interlock** (requirements for the host software; see hw-compute-power.md §5):
-   * IR only in night/edge mode
-   * IR off when the pod is pitched up to stow (−45…+30° window) or IMU health is degraded
-   * re-arm timeout of 120 s
+5. **Software interlock** (`lynx/hw/ir_interlock.py`, `lynx-headset --ir-interlock`; see
+   hw-compute-power.md §5.1):
+   * IR only when armed, in night/edge mode, pod deployed (−45…+30° pitch, |roll| ≤ 60°) and
+     the IMU healthy
+   * any trip drives IR_EN low, disarms, and locks out re-arming for 120 s
+   * a watchdog drives IR_EN low if the frame loop stalls
 6. **Never** check the illuminator by looking at it, or with a phone camera at close range.
    Check it with the rig's own camera and HUD, or with a card at 1 m viewed through the HUD.
 7. Label the pod: "IR EMITTER — INVISIBLE — DO NOT STARE" on the bezel's top rim.
