@@ -1,0 +1,29 @@
+{
+  "name": "tier-a-laptop-synthetic",
+  "relay": {"host": "127.0.0.1", "port": 8765},
+  "headset_common": [],
+  "operators": [
+    {
+      "node": 1,
+      "callsign": "ALPHA",
+      "team": "blue",
+      "x": 0.0,
+      "y": 0.0,
+      "heading": 0.0,
+      "pitch": 0.0,
+      "source": "synthetic",
+      "pose": "keyboard"
+    },
+    {
+      "node": 2,
+      "callsign": "BRAVO",
+      "team": "blue",
+      "x": 0.0,
+      "y": 20.0,
+      "heading": 180.0,
+      "pitch": -10.0,
+      "source": "synthetic",
+      "pose": "keyboard"
+    }
+  ]
+}
