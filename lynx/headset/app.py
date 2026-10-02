@@ -158,14 +158,31 @@ class HeadsetClient:
         """Queue a ping for the next frame (same path as a rail-switch trigger)."""
         self._pending_ping = True
 
-    def drop_ping(self, pose: Pose) -> Optional[RayHit]:
+    def drop_ping(self, pose: Pose, ping_type: Optional[PingType] = None) -> Optional[RayHit]:
         hit = raycast_from_pose(pose, max_range=self.config.max_range, fallback_range=self.config.fallback_range)
         x, y, z = (float(c) for c in hit.point)
-        ping = self.net.send_ping(x, y, z, self.selected_ping, self.config.ping_ttl_s)
+        ping_type = self.selected_ping if ping_type is None else ping_type
+        ping = self.net.send_ping(x, y, z, ping_type, self.config.ping_ttl_s)
         self.last_hit = hit
         self.last_ping_msg = f"#{ping.ping_id if ping else '?'} {hit.distance:.0f}m {hit.kind.value}"
         log.info("ping %s at (%.1f, %.1f, %.1f)", self.last_ping_msg, x, y, z)
         return hit
+
+    def handle_rail(self, commands, pose: Pose) -> None:
+        """Rail-switch gestures from a hardware pose source (``lynx.hw`` ``SerialPoseSample.rail``).
+
+        single -> ping of the selected type, double -> CONTACT ping, long -> cancel my last ping.
+        Pings raycast from the head attitude at the press (``cmd.aim``) when the source has it.
+        """
+        for cmd in commands:
+            action = getattr(cmd.action, "value", cmd.action)
+            if action == "cancel-last":
+                self.cancel_last_ping()
+                continue
+            if action not in ("ping", "ping-contact"):
+                continue
+            aim = cmd.aim.to_pose(pose.position) if getattr(cmd, "aim", None) is not None else pose
+            self.drop_ping(aim, PingType.CONTACT if action == "ping-contact" else None)
 
     def cancel_last_ping(self) -> None:
         mine = self.client.own_pings()
@@ -204,7 +221,10 @@ class HeadsetClient:
         if now >= self._next_tx:
             self.net.send_telemetry(pose.x, pose.y, pose.z, pose.yaw, pose.pitch, pose.roll, flags=sample.flags)
             self._next_tx = now + 1.0 / cfg.telemetry_hz
-        if sample.trigger or self._pending_ping:
+        rail = getattr(sample, "rail", ())
+        if rail:
+            self.handle_rail(rail, sample.pose)
+        if (sample.trigger and not rail) or self._pending_ping:
             self._pending_ping = False
             self.drop_ping(sample.pose)
 

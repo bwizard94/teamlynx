@@ -36,6 +36,10 @@ onnx = [
     "onnx>=1.15",
     "onnxruntime>=1.17",
 ]
+# Phase 3 head tracker on a real serial port (lynx.hw). The mock device needs nothing extra.
+hw = [
+    "pyserial>=3.5",
+]
 dev = [
     "pytest>=7.4",
     "pytest-asyncio>=0.23",

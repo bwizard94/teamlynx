@@ -108,10 +108,26 @@ register_pose_source("serial", lambda port, initial: SerialImuPoseSource(port, i
 ```
 
 `create_pose_source("serial:/dev/ttyUSB0", initial)` imports `lynx.hw` lazily the first time it is
-asked for a serial source. Until that package exists, `--pose serial:...` exits with a message
-saying so. An orientation-only IMU keeps `initial.position` (the CLI's `--x --y --eye-height`) as
-its position. `tests/headset/test_pose_source.py` covers this registration path with a stand-in
-plugin module.
+asked for a serial source. If the port cannot be opened, `--pose serial:...` exits with a
+"cannot open head tracker" message; `serial:mock://` runs without hardware. An orientation-only
+IMU keeps `initial.position` (the CLI's `--x --y --eye-height`) as its position.
+`tests/headset/test_pose_source.py` covers the registration path with a stand-in plugin module.
+SPEC options, calibration and wiring are in [hardware/README.md](hardware/README.md).
+
+**Rail-switch gestures.** The serial source returns a `SerialPoseSample`, a `PoseSample` with an
+extra `rail` tuple of gesture commands. `HeadsetClient.handle_rail` maps them as follows:
+
+| Gesture | Action |
+|---|---|
+| single click | ping of the selected type |
+| double click | CONTACT ping |
+| long press (≥ 0.7 s) | cancel my last ping |
+
+Each command carries the head attitude at the instant of the press (`aim`), and the ping is
+raycast from that attitude. The firmware only classifies a single click 300 ms after release, so
+the ping still lands where the operator aimed even if the head has moved since. When `rail` is
+present the client ignores `trigger`, so each gesture produces exactly one ping. Sources without
+`rail` keep the plain `trigger` behaviour.
 
 ## What the client does each frame
 
@@ -141,4 +157,5 @@ pytest tests/headset -q
 |---|---|
 | `test_adapters.py` | Phase 2's closed-form rotation equals `lynx.spatial`'s; vision projection, bearings and edge arrows agree with `Camera.project`; HUD ping placement; relay message adapters |
 | `test_pose_source.py` | keyboard steps and one-shot trigger, static spec, lazy `serial` plugin (missing and present) |
-| `test_integration.py` | real relay with two headless headsets: each labels the other FRIENDLY with the right callsign and team colour, no TANGO; BRAVO's keyboard ping reaches ALPHA, renders at the analytically predicted pixel with ping-coloured chevron pixels there, and becomes a side-edge arrow when ALPHA turns around; cancel propagates; CLI headless run; missing serial plugin |
+| `test_integration.py` | real relay with two headless headsets: each labels the other FRIENDLY with the right callsign and team colour, no TANGO; BRAVO's keyboard ping reaches ALPHA, renders at the analytically predicted pixel with ping-coloured chevron pixels there, and becomes a side-edge arrow when ALPHA turns around; cancel propagates; CLI headless run; `serial:` pose with an unopenable port (clean exit) and with the mock device |
+| `test_rail.py` | `lynx.hw` mock head tracker → `SerialImuPoseSource` → `HeadsetClient`: a single click pings the selected type at the press-time attitude even after the head turns; a double click makes a CONTACT ping; a long press cancels the last ping; Space still works |
