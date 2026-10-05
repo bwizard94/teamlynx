@@ -1,0 +1,61 @@
+[build-system]
+requires = ["setuptools>=64", "wheel"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "teamlynx"
+version = "0.1.0"
+description = "TeamLynx: squad tactical AR HUD for airsoft - networking, spatial math, vision pipeline, HUD and headset client"
+readme = "README.md"
+requires-python = ">=3.10"
+license = { text = "MIT" }
+dependencies = [
+    "numpy>=1.23",
+    "websockets>=13.0",
+]
+
+[project.optional-dependencies]
+sim = ["pygame>=2.1"]
+# Edge filter, IFF, HUD and lynx-headset. Pick exactly one of vision / vision-headless (the two
+# OpenCV wheels overwrite each other). On Jetson install neither: use the JetPack (CUDA) OpenCV so
+# cv2.cuda exists, then `pip install -e . scipy` (docs/vision-pipeline.md).
+vision = [
+    "opencv-python>=4.8",
+    "scipy>=1.10",
+]
+vision-headless = [
+    "opencv-python-headless>=4.8",
+    "scipy>=1.10",
+]
+# YOLO detection. CPU-only desktop: install torch first from
+# https://download.pytorch.org/whl/cpu; on Jetson install NVIDIA's JetPack torch wheel first.
+yolo = [
+    "ultralytics>=8.3.0",
+]
+onnx = [
+    "onnx>=1.15",
+    "onnxruntime>=1.17",
+]
+dev = [
+    "pytest>=7.4",
+    "pytest-asyncio>=0.23",
+    "pygame>=2.1",
+]
+
+[project.scripts]
+lynx-relay = "lynx.net.server:main"
+lynx-sim = "lynx.sim.app:main"
+lynx-sim-launch = "lynx.sim.launch:main"
+lynx-selfcheck = "lynx.sim.selfcheck:main"
+lynx-headset = "lynx.headset.app:main"
+lynx-hud-demo = "lynx.hud.demo:main"
+lynx-bench-edge = "lynx.vision.bench_edge:main"
+
+[tool.setuptools.packages.find]
+include = ["lynx*"]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+asyncio_mode = "auto"
+asyncio_default_fixture_loop_scope = "function"
+addopts = "-ra"
