@@ -1,5 +1,7 @@
 # TeamLynx
 
+[![CI](https://github.com/bwizard94/teamlynx/actions/workflows/ci.yml/badge.svg)](https://github.com/bwizard94/teamlynx/actions/workflows/ci.yml)
+
 TeamLynx is a squad tactical AR HUD for airsoft. Each headset shares its position over an offline
 squad network, shows friendly IFF markers, and draws world pings that stay perspective-correct for
 every operator.
@@ -25,6 +27,22 @@ python -m venv .venv && source .venv/bin/activate
 pip install -e ".[vision,dev]"   # numpy, websockets, opencv, scipy, pygame, pytest
 pytest                           # full test suite
 lynx-selfcheck                   # headless end-to-end check (relay + 3 virtual operators)
+```
+
+## CI
+
+GitHub Actions (`.github/workflows/ci.yml`) runs on every push to `main` and every pull request:
+`pytest` on Python 3.10 with `pip install -e ".[dev,vision-headless]"`, plus host-side firmware
+tests (`pio test -e native` in `firmware/`, no device flash). No GPU/CUDA or YOLO/torch jobs.
+
+To run the same checks locally:
+
+```bash
+python -m venv .venv && source .venv/bin/activate
+pip install -e ".[dev,vision-headless]"
+pytest
+# optional firmware host tests (needs PlatformIO + a C++ compiler):
+# cd firmware && pio test -e native
 ```
 
 Optional extras: `[vision]` (OpenCV + SciPy; use `[vision-headless]` instead on servers/CI, never
