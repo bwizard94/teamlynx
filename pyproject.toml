@@ -60,6 +60,7 @@ lynx-headset = "lynx.headset.app:main"
 lynx-hud-demo = "lynx.hud.demo:main"
 lynx-bench-edge = "lynx.vision.bench_edge:main"
 lynx-field = "lynx.field.cli:main"
+lynx-poc = "lynx.poc.launch:main"
 
 [tool.setuptools.packages.find]
 include = ["lynx*"]

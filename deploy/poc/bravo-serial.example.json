@@ -1,0 +1,29 @@
+{
+  "name": "tier-b-bravo-bno085",
+  "relay": {"host": "0.0.0.0", "port": 8765},
+  "headset_common": ["--allow-no-detector"],
+  "operators": [
+    {
+      "node": 1,
+      "callsign": "ALPHA",
+      "team": "blue",
+      "x": 0.0,
+      "y": 0.0,
+      "heading": 0.0,
+      "source": "0",
+      "pose": "keyboard",
+      "hfov": 78.0
+    },
+    {
+      "node": 2,
+      "callsign": "BRAVO",
+      "team": "blue",
+      "x": 0.0,
+      "y": 8.0,
+      "heading": 180.0,
+      "source": "2",
+      "pose": "serial:/dev/ttyUSB0",
+      "hfov": 78.0
+    }
+  ]
+}
