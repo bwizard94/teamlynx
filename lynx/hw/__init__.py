@@ -6,6 +6,7 @@
 * :mod:`lynx.hw.serial_link`  threaded, async-friendly serial reader + command client
 * :mod:`lynx.hw.mock`         in-process mock device speaking the real protocol
 * :mod:`lynx.hw.bridge`       head pose + rail gestures -> ping actions for a HUD/sim loop
+* :mod:`lynx.hw.ir_interlock` IR_EN (Jetson pin 32) illuminator interlock, fail-safe off
 
 CLI: ``python -m lynx.hw --help``. Hardware docs: ``docs/hardware/``.
 """

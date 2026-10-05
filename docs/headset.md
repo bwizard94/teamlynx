@@ -75,6 +75,7 @@ rail switch. Also available: `--save-at N`, `--record hud.mp4`, `--fps 0` (uncap
 | e | toggle EagleEye edge mode |
 | p | cycle PiP: auto, edge, raw, top-down, none |
 | c | screenshot |
+| n | arm / disarm the IR illuminator (with `--ir-interlock`) |
 | q / Esc | quit |
 
 The keyboard stands in for the IMU and the rail switch on the bench. In the field there is no
@@ -128,6 +129,14 @@ raycast from that attitude. The firmware only classifies a single click 300 ms a
 the ping still lands where the operator aimed even if the head has moved since. When `rail` is
 present the client ignores `trigger`, so each gesture produces exactly one ping. Sources without
 `rail` keep the plain `trigger` behaviour.
+
+## IR illuminator interlock
+
+`--ir-interlock` drives IR_EN (Jetson header pin 32, `--ir-pin`) through `lynx/hw/ir_interlock.py`.
+IR is on only when it is armed (`n` / `--ir-arm`), edge mode is on, the head-tracker pitch and roll
+say the pod is deployed, and the IMU link is OK (`--ir-imu usable` also accepts DEGRADED).
+Any trip forces it off, disarms, and locks out re-arming for 120 s. `--ir-gpio mock` is a dry run.
+Full behaviour, fail-safes and the systemd stop hook: `docs/field/hw-compute-power.md` §5.1.
 
 ## What the client does each frame
 
