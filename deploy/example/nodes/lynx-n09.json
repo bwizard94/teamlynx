@@ -1,0 +1,28 @@
+{
+  "node": 9,
+  "callsign": "INDIA",
+  "team": "green",
+  "role": "operator",
+  "squad": "LYNX",
+  "relay_urls": [],
+  "discovery": true,
+  "imu": "/dev/lynx-imu",
+  "gnss": null,
+  "site": "/etc/lynx/site.json",
+  "cal_dir": "/var/lib/lynx",
+  "log_dir": "/var/log/lynx",
+  "calibrate": "if-stale",
+  "calibrate_max_age_h": 12.0,
+  "station": null,
+  "markers": [],
+  "camera": {
+    "source": "0",
+    "hfov": 78.0,
+    "width": 1280,
+    "height": 720
+  },
+  "telemetry_hz": 20.0,
+  "imu_report": "rv",
+  "headset_args": [],
+  "relay_role": null
+}

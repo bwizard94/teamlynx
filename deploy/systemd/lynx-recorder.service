@@ -1,0 +1,21 @@
+[Unit]
+Description=TeamLynx session recorder (observer on the relay; for routers without storage)
+Documentation=file:///opt/lynx/src/docs/field/net-deployment.md
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=simple
+User=@USER@
+Group=@USER@
+Environment=PYTHONUNBUFFERED=1
+ExecStart=@VENV@/bin/lynx-field record --out /var/log/lynx --gz
+Restart=always
+RestartSec=2
+NoNewPrivileges=yes
+ProtectSystem=strict
+ProtectHome=read-only
+ReadWritePaths=/var/log/lynx
+
+[Install]
+WantedBy=multi-user.target
